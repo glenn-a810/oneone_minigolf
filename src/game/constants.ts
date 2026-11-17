@@ -40,6 +40,9 @@ export const NICKNAMES = [
 
 export const EMOJIS = ['👏', '🔥', '⛳', '😂'] as const;
 
+/** 대기실 이모지 바 (채팅 없이 감정만 주고받는다) */
+export const LOBBY_EMOJIS = ['👋', '⛳', '🔥', '👏', '😂', '🎉'] as const;
+
 export function randomNickname(): string {
   const base = NICKNAMES[Math.floor(Math.random() * NICKNAMES.length)];
   const n = Math.floor(Math.random() * 90) + 10;

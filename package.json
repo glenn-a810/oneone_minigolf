@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "verify:physics": "esbuild scripts/physics-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/physics-check.cjs && node .tmp/physics-check.cjs",
-    "verify:sync": "esbuild scripts/sync-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/sync-check.cjs && node .tmp/sync-check.cjs"
+    "verify:sync": "esbuild scripts/sync-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/sync-check.cjs && node .tmp/sync-check.cjs",
+    "verify:lobby": "esbuild scripts/lobby-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/lobby-check.cjs && node .tmp/lobby-check.cjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

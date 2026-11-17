@@ -3,6 +3,8 @@ import type { Game } from './game';
 interface InputHooks {
   onToggleMute?: () => void;
   onToggleHelp?: () => void;
+  /** false 면 입력을 무시한다 (대기실에서는 게임 조작이 꺼진다) */
+  isActive?: () => boolean;
 }
 
 /** 캔버스 포인터(마우스/터치)와 키보드를 게임 조작으로 연결한다. */
@@ -21,23 +23,28 @@ export class InputController {
   }
 
   private handleDown = (event: PointerEvent): void => {
+    if (this.hooks.isActive && !this.hooks.isActive()) return;
     this.element.setPointerCapture?.(event.pointerId);
     this.game.pointerDown(event.clientX, event.clientY, event.pointerId, event.button);
   };
 
   private handleMove = (event: PointerEvent): void => {
+    if (this.hooks.isActive && !this.hooks.isActive()) return;
     this.game.pointerMove(event.clientX, event.clientY, event.pointerId);
   };
 
   private handleUp = (event: PointerEvent): void => {
+    if (this.hooks.isActive && !this.hooks.isActive()) return;
     this.game.pointerUp(event.pointerId);
   };
 
   private handleCancel = (event: PointerEvent): void => {
+    if (this.hooks.isActive && !this.hooks.isActive()) return;
     this.game.pointerCancel(event.pointerId);
   };
 
   private handleKey = (event: KeyboardEvent): void => {
+    if (this.hooks.isActive && !this.hooks.isActive()) return;
     const target = event.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
 

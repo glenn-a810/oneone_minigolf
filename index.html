@@ -9,15 +9,15 @@
     <meta name="theme-color" content="#bfe6ff" />
     <meta
       name="description"
-      content="원온 미니골프 — 로그인 없이 바로 즐기는 3홀 3D 미니골프. 닉네임만 정하고 티오프하세요."
+      content="원온 미니골프 — 3D 대기실에서 이모지로 인사하고, 플레이룸에서 3홀 미니골프를 즐겨요. 로그인 없이 닉네임만 정하면 끝."
     />
-    <title>원온 미니골프 · ONEOINE MINI GOLF</title>
+    <title>원온 미니골프 · ONEOINE CLUBHOUSE</title>
   </head>
   <body>
     <div id="app">
-      <canvas id="scene" aria-label="3D 미니골프 코스"></canvas>
+      <canvas id="scene" aria-label="원온 클럽하우스 3D 대기실"></canvas>
 
-      <!-- 인게임 HUD -->
+      <!-- 플레이룸(미니골프) HUD -->
       <div id="hud" class="hud hidden">
         <div class="hud-top">
           <div class="hole-card">
@@ -34,6 +34,9 @@
               <i id="me-dot" class="dot"></i>
               <span id="me-name">플레이어</span>
             </div>
+            <button id="btn-lobby" class="icon-btn home" type="button" title="대기실로" aria-label="대기실로">
+              🏠
+            </button>
             <button id="btn-sound" class="icon-btn" type="button" title="소리 켜기/끄기" aria-label="소리 켜기/끄기">
               🔊
             </button>
@@ -63,6 +66,52 @@
         </div>
       </div>
 
+      <!-- 대기실(로비) HUD -->
+      <div id="lobby-hud" class="hud lobby-hud hidden">
+        <div class="hud-top">
+          <div class="lobby-card">
+            <span class="lobby-badge">🏛️</span>
+            <div class="lobby-card-text">
+              <p class="lobby-title">원온 클럽하우스</p>
+              <p class="lobby-sub" id="lobby-count">대기실 1명 · 플레이룸 0명</p>
+            </div>
+          </div>
+          <div class="hud-actions">
+            <div class="me-chip">
+              <i id="lobby-me-dot" class="dot"></i>
+              <span id="lobby-me-name">플레이어</span>
+            </div>
+            <button
+              id="btn-lobby-sound"
+              class="icon-btn"
+              type="button"
+              title="소리 켜기/끄기"
+              aria-label="소리 켜기/끄기"
+            >
+              🔊
+            </button>
+            <button id="btn-lobby-help" class="icon-btn" type="button" title="조작법" aria-label="조작법">?</button>
+          </div>
+        </div>
+
+        <div id="lobby-players" class="players lobby-players"></div>
+
+        <div class="lobby-bottom">
+          <button id="btn-gate" class="gate-btn hidden" type="button">플레이룸 입장 ⛳</button>
+          <p class="lobby-hint" id="lobby-hint">
+            <b>WASD·방향키</b> 또는 <b>바닥을 눌러</b> 이동 · 모바일은 화면을 드래그
+          </p>
+          <div class="emoji-bar wide" id="lobby-emoji-bar">
+            <button type="button" data-lobby-emoji="👋" aria-label="손 흔들기">👋</button>
+            <button type="button" data-lobby-emoji="⛳" aria-label="골프">⛳</button>
+            <button type="button" data-lobby-emoji="🔥" aria-label="불꽃">🔥</button>
+            <button type="button" data-lobby-emoji="👏" aria-label="박수">👏</button>
+            <button type="button" data-lobby-emoji="😂" aria-label="웃김">😂</button>
+            <button type="button" data-lobby-emoji="🎉" aria-label="축하">🎉</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 홀/성적 배너 -->
       <div id="banner" class="banner hidden" aria-live="polite">
         <h2 id="banner-title">홀인원!</h2>
@@ -70,15 +119,17 @@
       </div>
 
       <div id="toast" class="toast hidden" aria-live="polite"></div>
+      <div id="fade" class="fade"></div>
 
       <!-- 입장 화면 -->
       <div id="entry" class="overlay entry">
         <div class="entry-card">
           <div class="brand">
-            <div class="brand-mark">⛳</div>
+            <div class="brand-mark">🏛️</div>
             <div class="brand-text">
+              <p class="brand-eyebrow">ONEOINE CLUBHOUSE</p>
               <h1>원온 미니골프</h1>
-              <p>로그인 없이 바로, 3홀 미니골프</p>
+              <p>3D 대기실에서 만나고, 플레이룸에서 3홀 라운드</p>
             </div>
           </div>
 
@@ -98,14 +149,14 @@
           </label>
 
           <div class="field">
-            <span class="field-label">공 색상</span>
+            <span class="field-label">캐릭터 색상</span>
             <div id="colors" class="colors"></div>
           </div>
 
-          <button id="btn-teeoff" class="primary-btn" type="button">티오프 ⛳</button>
+          <button id="btn-teeoff" class="primary-btn" type="button">대기실 입장 🚪</button>
           <p class="entry-note">
-            브라우저 탭을 하나 더 열면 <b>같은 방에서 함께</b> 칠 수 있어요.<br />
-            첫 방문엔 3홀 연습 라운드를 추천합니다.
+            대기실에서 <b>이모지</b>로 인사하고, 광장 끝 <b>플레이룸 게이트</b>로 들어가면 3홀 미니골프가 시작돼요.<br />
+            브라우저 탭을 하나 더 열면 같은 대기실에서 서로 만날 수 있어요.
           </p>
         </div>
       </div>
@@ -136,8 +187,9 @@
             </tfoot>
           </table>
 
+          <button id="btn-back-lobby" class="primary-btn lobby-return" type="button">🏠 대기실로 돌아가기</button>
           <div class="btn-row">
-            <button id="btn-again" class="primary-btn" type="button">다시 치기</button>
+            <button id="btn-again" class="ghost-btn" type="button">다시 치기</button>
             <button id="btn-copy" class="ghost-btn" type="button">기록 복사하기</button>
           </div>
           <p id="copy-hint" class="copy-hint"></p>
@@ -149,12 +201,14 @@
         <div class="card help-card">
           <h2>조작법</h2>
           <ul class="help-list">
-            <li><b>퍼팅</b> — 공을 잡고 <b>뒤로 당긴</b> 뒤 놓으면, 당긴 반대 방향으로 날아가요. 당긴 길이가 파워!</li>
-            <li><b>카메라</b> — 두 손가락으로 드래그(모바일) 또는 <b>마우스 오른쪽 드래그</b>/<b>A · D</b> 키로 회전.</li>
-            <li><b>단축키</b> — <b>M</b> 소리, <b>R</b> 공 되돌리기(+1벌타), <b>H</b> 도움말.</li>
-            <li><b>함께 치기</b> — 같은 브라우저에서 탭을 여러 개 열면 서로의 공과 이모지가 실시간으로 보여요.</li>
+            <li><b>대기실 이동</b> — <b>WASD</b>·<b>방향키</b>, 바닥을 <b>클릭/탭</b>하면 그쪽으로 걸어가요. 모바일은 화면을 <b>드래그</b>하면 조이스틱이 나타납니다.</li>
+            <li><b>이모지</b> — 아래 이모지 바(👋⛳🔥👏😂🎉)를 누르면 내 캐릭터 위에 말풍선이 떠요. 채팅 없이 감정만 주고받아요.</li>
+            <li><b>플레이룸</b> — 광장 끝 <b>빛나는 게이트</b>로 걸어 들어가면 3홀 미니골프가 시작됩니다. 게임 중 🏠 버튼으로 대기실에 돌아올 수 있어요.</li>
+            <li><b>퍼팅</b> — 플레이룸에서 공을 잡고 <b>뒤로 당긴</b> 뒤 놓으면 반대 방향으로 날아가요. 당긴 길이가 파워!</li>
+            <li><b>카메라(게임)</b> — 마우스 오른쪽 드래그, 게임 중 <b>A · D</b>. <b>M</b> 소리, <b>R</b> 공 되돌리기(+1벌타).</li>
+            <li><b>함께하기</b> — 같은 브라우저에서 탭을 여러 개 열면 대기실 위치·이모지·플레이룸 이동이 실시간으로 동기화돼요.</li>
           </ul>
-          <p class="help-note">워터 해저드에 빠지면 마지막 샷 위치로 돌아가고 1벌타가 붙습니다.</p>
+          <p class="help-note">혼자 접속해도 로비 게스트들이 광장을 거닐며 이모지로 반응해요. 워터 해저드에 빠지면 마지막 샷 위치로 돌아가고 1벌타가 붙습니다.</p>
           <button id="btn-help-close" class="primary-btn" type="button">알겠어요</button>
         </div>
       </div>

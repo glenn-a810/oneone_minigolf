@@ -262,6 +262,21 @@ export class Game {
     this.broadcastState(true);
   }
 
+  /** 대기실로 돌아갈 때: 다른 탭의 참가자 목록에서 빠지고 플레이룸 상태를 정리한다. */
+  exitToLobby(): void {
+    if (this.identity) this.broadcast({ type: 'bye', id: this.identity.id });
+    this.identity = null;
+    this.state = 'idle';
+    this.ballMesh.visible = false;
+    this.aim = null;
+    this.pointers.clear();
+    this.hideAimGuide();
+    this.effects.clear();
+    this.remotes.clear();
+    this.peers.clear();
+    this.peersDirty = false;
+  }
+
   private placeBall(x: number, z: number): void {
     this.ballBody.wakeUp();
     this.ballBody.position.set(x, BALL_RADIUS + 0.002, z);

@@ -157,4 +157,11 @@ export class AudioEngine {
   ui(): void {
     this.tone(660, 0.06, 'sine', 0.07, 880);
   }
+
+  /** 플레이룸 게이트 통과 — 위로 솟는 반짝임 */
+  portal(): void {
+    this.tone(392, 0.5, 'sine', 0.1, 880);
+    this.tone(587.33, 0.5, 'triangle', 0.06, 1174.66, 0.06);
+    this.noise(0.4, 0.05, 5200, 1400);
+  }
 }

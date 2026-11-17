@@ -1,5 +1,17 @@
 import type { PlayerSnapshot } from '../game/types';
 
+/** 대기실(로비)에서 공유하는 플레이어 상태. */
+export interface LobbySnapshot {
+  id: string;
+  name: string;
+  color: string;
+  pos: [number, number, number];
+  /** 캐릭터가 바라보는 방향 (라디안) */
+  heading: number;
+  moving: boolean;
+  ts: number;
+}
+
 /**
  * 실시간 동기화 메시지. 모두 순수 JSON 이라 어떤 전송 계층에도 그대로 실을 수 있다.
  *
@@ -22,7 +34,12 @@ export type NetMessage =
   | { type: 'emoji'; id: string; emoji: string }
   | { type: 'shot'; id: string; power: number }
   | { type: 'holed'; id: string; hole: number; strokes: number; name: string }
-  | { type: 'again'; id: string; name: string };
+  | { type: 'again'; id: string; name: string }
+  // ---- 3D 대기실(로비) ----
+  | { type: 'lobby'; player: LobbySnapshot }
+  | { type: 'lobby-bye'; id: string }
+  | { type: 'lobby-emoji'; id: string; emoji: string }
+  | { type: 'playroom'; id: string; name: string; joined: boolean };
 
 export interface Realtime {
   /** 실시간 계층이 실제로 연결되어 있는지 (탭 간 동기화 가능 여부) */
