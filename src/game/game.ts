@@ -537,8 +537,8 @@ export class Game {
         // 착지 예정 지점/그린 상공 타겟뷰: 착지 링·그린·벙커·연못이 한눈에
         const focus = this.targetViewFocus();
         const span = Math.hypot(focus.x - this.ball.x, focus.z - this.ball.z);
-        this.rig.setDistance(THREE.MathUtils.clamp(14 + span * 0.7, 16, 42));
-        this.rig.setPitch(0.72);
+        this.rig.setDistance(THREE.MathUtils.clamp(18 + span * 0.75, 22, 46));
+        this.rig.setPitch(0.68);
         this.rig.update(dt, focus, this.camera, false, 0);
         return;
       }

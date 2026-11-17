@@ -1364,22 +1364,30 @@ body {
   box-shadow: 0 6px 14px rgba(232, 90, 57, 0.3);
 }
 
-.club-chip.recommended::after {
-  content: '추천';
-  position: absolute;
-  top: -7px;
-  right: -4px;
+.club-chip.recommended {
+  border-color: rgba(47, 158, 68, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(47, 158, 68, 0.28);
+}
+
+.club-chip .rec-tag {
+  display: none;
+  margin-left: 1px;
   padding: 1px 5px;
   border-radius: 999px;
   background: #2f9e44;
   color: #fff;
   font-size: 8px;
+  font-style: normal;
   font-weight: 900;
   letter-spacing: -0.02em;
 }
 
-.club-chip.active.recommended::after {
-  background: #1f7a33;
+.club-chip.recommended .rec-tag {
+  display: inline-block;
+}
+
+.club-chip.active .rec-tag {
+  background: #14532d;
 }
 
 .shot-controls {

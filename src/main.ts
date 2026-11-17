@@ -288,7 +288,10 @@ CLUBS.forEach((club) => {
   code.textContent = club.code;
   const name = document.createElement('span');
   name.textContent = club.short;
-  button.append(code, name);
+  const rec = document.createElement('i');
+  rec.className = 'rec-tag';
+  rec.textContent = '추천';
+  button.append(code, name, rec);
   clubRow.appendChild(button);
 });
 
