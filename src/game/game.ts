@@ -855,22 +855,31 @@ export class Game {
         );
     this.preview = preview;
 
-    // 점선 궤적 (균등 간격으로 샘플)
+    // 점선 궤적 — 짧은 퍼트에서 점이 뭉치지 않도록 경로 길이에 맞춰 간격·크기를 조절한다
     const points = preview.points;
-    const step = Math.max(1, Math.floor(points.length / AIM_DOT_COUNT));
+    let pathLen = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      pathLen += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+    }
+    const spacing = Math.max(0.75, Math.min(2.6, pathLen / Math.max(1, AIM_DOT_COUNT - 1)));
+    const dotScale = Math.min(1, Math.max(0.42, spacing / 1.7));
     let shown = 0;
-    for (let i = 0; i < AIM_DOT_COUNT; i += 1) {
-      const point = points[Math.min(points.length - 1, i * step)];
-      const dot = this.aimDots[i];
-      if (!point || shown >= AIM_DOT_COUNT) {
-        dot.visible = false;
-        continue;
+    let travelled = 0;
+    let nextAt = 0;
+    for (let i = 0; i < points.length && shown < AIM_DOT_COUNT; i += 1) {
+      if (i > 0) {
+        travelled += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
       }
+      if (travelled + 1e-6 < nextAt) continue;
+      const dot = this.aimDots[shown];
       dot.visible = true;
-      dot.position.set(point.x, Math.max(0.035, point.y + 0.02), point.z);
-      const scale = 1 - i / (AIM_DOT_COUNT * 1.6);
-      dot.scale.setScalar(Math.max(0.5, scale));
+      dot.position.set(points[i].x, Math.max(0.035, points[i].y + 0.02), points[i].z);
+      dot.scale.setScalar(Math.max(0.34, dotScale * (1 - shown / (AIM_DOT_COUNT * 2.4))));
       shown += 1;
+      nextAt = travelled + spacing;
+    }
+    for (let i = shown; i < AIM_DOT_COUNT; i += 1) {
+      this.aimDots[i].visible = false;
     }
 
     if (preview.landing) {
