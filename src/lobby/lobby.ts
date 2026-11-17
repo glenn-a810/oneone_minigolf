@@ -1053,8 +1053,8 @@ export class Lobby {
     this.scene.add(sprite);
     this.bubbles.push({
       sprite,
-      life: 1.9,
-      maxLife: 1.9,
+      life: 2.6,
+      maxLife: 2.6,
       drift: (Math.random() - 0.5) * 0.3,
     });
   }
