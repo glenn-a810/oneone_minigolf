@@ -46,8 +46,8 @@ const BOUND = 13.6;
 const GATE = new THREE.Vector3(0, 0, -9);
 const GATE_TRIGGER = 1.35;
 const WALK_SPEED = 3.7;
-const CAM_DISTANCE = 10.6;
-const CAM_PITCH = 0.53;
+const CAM_DISTANCE = 9.4;
+const CAM_PITCH = 0.48;
 const NET_INTERVAL = 0.12;
 
 interface Obstacle {
@@ -406,8 +406,8 @@ export class Lobby {
     this.obstacles.push({ x: 7.8, z: -3.4, r: 2.85 });
 
     // 클럽하우스 건물
-    const houseX = -8.2;
-    const houseZ = 3.8;
+    const houseX = -9.2;
+    const houseZ = 2.6;
     const house = new THREE.Group();
     house.position.set(houseX, 0, houseZ);
     house.rotation.y = 0.5;
@@ -416,8 +416,8 @@ export class Lobby {
     wall.position.y = 1.2;
     house.add(wall);
 
-    const roof = this.mesh(new THREE.ConeGeometry(3.6, 1.7, 4), roofMat);
-    roof.position.y = 3.1;
+    const roof = this.mesh(new THREE.ConeGeometry(3.05, 1.45, 4), roofMat);
+    roof.position.y = 3.0;
     roof.rotation.y = Math.PI / 4;
     house.add(roof);
 
@@ -607,12 +607,12 @@ export class Lobby {
     );
     const innerMat = this.track(
       new THREE.MeshBasicMaterial({
-        color: 0xa6f0ff,
+        color: 0xffffff,
+        map: portalTexture(),
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.88,
         side: THREE.DoubleSide,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
       }),
     );
     const haloMat = this.track(
@@ -1027,7 +1027,7 @@ export class Lobby {
     }
     if (this.gateInner) {
       const material = this.gateInner.material as THREE.MeshBasicMaterial;
-      material.opacity = 0.34 + Math.sin(t * 1.7) * 0.1;
+      material.opacity = 0.78 + Math.sin(t * 1.7) * 0.12;
       this.gateInner.rotation.z += dt * 0.35;
       const scale = 1 + Math.sin(t * 2.6) * 0.03;
       this.gateInner.scale.set(scale, scale, 1);
@@ -1328,4 +1328,44 @@ export class Lobby {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** 플레이룸 게이트 안쪽의 빛나는 소용돌이 (캔버스 그라데이션) */
+function portalTexture(): THREE.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const gradient = ctx.createRadialGradient(128, 128, 6, 128, 128, 126);
+  gradient.addColorStop(0, 'rgba(236, 255, 255, 0.98)');
+  gradient.addColorStop(0.35, 'rgba(126, 238, 255, 0.9)');
+  gradient.addColorStop(0.72, 'rgba(62, 200, 255, 0.55)');
+  gradient.addColorStop(1, 'rgba(62, 200, 255, 0.06)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(128, 128, 126, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 소용돌이 선
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 3; i += 1) {
+    ctx.beginPath();
+    const offset = (i / 3) * Math.PI * 2;
+    for (let a = 0; a < Math.PI * 1.5; a += 0.08) {
+      const r = 12 + a * 16;
+      const x = 128 + Math.cos(a + offset) * r;
+      const y = 128 + Math.sin(a + offset) * r;
+      if (a === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
