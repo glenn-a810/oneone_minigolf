@@ -306,9 +306,22 @@ export class Course {
     teeMesh.position.set(this.tee.x, 0.006, this.tee.z);
     this.group.add(teeMesh);
 
-    // 장식
+    // 장식 (나무·바위는 작은 잔디 발판 위에 올려 공중에 뜨지 않게 한다)
     for (const decor of spec.decor ?? []) {
       const scale = decor.s ?? 1;
+      if (decor.kind === 'tree' || decor.kind === 'rock') {
+        const padRadius = decor.kind === 'tree' ? 0.62 : 0.46;
+        const pad = this.addSlabMesh(padRadius * 2, padRadius * 2, 0.3, padRadius, MAT.fairway);
+        pad.mesh.position.set(decor.x, pad.topOffset, decor.z);
+        pad.mesh.castShadow = false;
+        this.group.add(pad.mesh);
+
+        const padSkirt = this.addSlabMesh(padRadius * 1.8, padRadius * 1.8, 0.9, padRadius * 0.9, MAT.skirt);
+        padSkirt.mesh.position.set(decor.x, -0.28 + padSkirt.topOffset, decor.z);
+        padSkirt.mesh.castShadow = false;
+        this.group.add(padSkirt.mesh);
+      }
+
       if (decor.kind === 'tree') {
         const tree = createTree(scale);
         tree.position.set(decor.x, decor.y ?? 0, decor.z);
