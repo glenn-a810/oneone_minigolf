@@ -1,0 +1,27 @@
+{
+  "name": "oneone-minigolf",
+  "private": true,
+  "version": "0.1.0",
+  "description": "원온 미니골프 (ONEOINE MINI GOLF) — 로그인 없이 바로 즐기는 3홀 3D 미니골프 웹앱 MVP",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "verify:physics": "esbuild scripts/physics-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/physics-check.cjs && node .tmp/physics-check.cjs",
+    "verify:sync": "esbuild scripts/sync-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/sync-check.cjs && node .tmp/sync-check.cjs"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.8"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

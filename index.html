@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#bfe6ff" />
+    <meta
+      name="description"
+      content="원온 미니골프 — 로그인 없이 바로 즐기는 3홀 3D 미니골프. 닉네임만 정하고 티오프하세요."
+    />
+    <title>원온 미니골프 · ONEOINE MINI GOLF</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene" aria-label="3D 미니골프 코스"></canvas>
+
+      <!-- 인게임 HUD -->
+      <div id="hud" class="hud hidden">
+        <div class="hud-top">
+          <div class="hole-card">
+            <div class="hole-card-head">
+              <span id="hole-no">1홀</span>
+              <span id="hole-par" class="par">Par 2</span>
+            </div>
+            <p id="hole-name" class="hole-name">스타트 라인</p>
+            <p id="hole-hint" class="hole-hint"></p>
+            <p class="hole-dist"><span id="hole-dist">0.0</span>m 남음</p>
+          </div>
+          <div class="hud-actions">
+            <div class="me-chip">
+              <i id="me-dot" class="dot"></i>
+              <span id="me-name">플레이어</span>
+            </div>
+            <button id="btn-sound" class="icon-btn" type="button" title="소리 켜기/끄기" aria-label="소리 켜기/끄기">
+              🔊
+            </button>
+            <button id="btn-help" class="icon-btn" type="button" title="조작법" aria-label="조작법">?</button>
+          </div>
+        </div>
+
+        <div id="players" class="players"></div>
+
+        <div class="hud-bottom">
+          <div class="aim-panel">
+            <div class="stroke-box">
+              <span id="stroke-count">0</span>
+              <small>타</small>
+            </div>
+            <div class="power-wrap">
+              <div class="power-track"><div id="power-fill" class="power-fill"></div></div>
+              <p id="power-hint" class="power-hint">공을 뒤로 당겨 퍼팅</p>
+            </div>
+          </div>
+          <div class="emoji-bar" id="emoji-bar">
+            <button type="button" data-emoji="👏" aria-label="박수">👏</button>
+            <button type="button" data-emoji="🔥" aria-label="불꽃">🔥</button>
+            <button type="button" data-emoji="⛳" aria-label="깃발">⛳</button>
+            <button type="button" data-emoji="😂" aria-label="웃김">😂</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 홀/성적 배너 -->
+      <div id="banner" class="banner hidden" aria-live="polite">
+        <h2 id="banner-title">홀인원!</h2>
+        <p id="banner-sub"></p>
+      </div>
+
+      <div id="toast" class="toast hidden" aria-live="polite"></div>
+
+      <!-- 입장 화면 -->
+      <div id="entry" class="overlay entry">
+        <div class="entry-card">
+          <div class="brand">
+            <div class="brand-mark">⛳</div>
+            <div class="brand-text">
+              <h1>원온 미니골프</h1>
+              <p>로그인 없이 바로, 3홀 미니골프</p>
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="field-label">닉네임</span>
+            <div class="nick-row">
+              <input
+                id="nickname"
+                type="text"
+                maxlength="12"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="닉네임"
+              />
+              <button id="btn-dice" class="ghost-btn dice" type="button" title="랜덤 닉네임">🎲</button>
+            </div>
+          </label>
+
+          <div class="field">
+            <span class="field-label">공 색상</span>
+            <div id="colors" class="colors"></div>
+          </div>
+
+          <button id="btn-teeoff" class="primary-btn" type="button">티오프 ⛳</button>
+          <p class="entry-note">
+            브라우저 탭을 하나 더 열면 <b>같은 방에서 함께</b> 칠 수 있어요.<br />
+            첫 방문엔 3홀 연습 라운드를 추천합니다.
+          </p>
+        </div>
+      </div>
+
+      <!-- 스코어카드 -->
+      <div id="scorecard" class="overlay hidden">
+        <div class="card score-card">
+          <p class="eyebrow">ROUND RESULT</p>
+          <h2 id="score-title">라운드 결과</h2>
+          <p id="score-sub" class="sub"></p>
+
+          <table class="score-table">
+            <thead>
+              <tr>
+                <th>홀</th>
+                <th>Par</th>
+                <th>타수</th>
+                <th>성적</th>
+              </tr>
+            </thead>
+            <tbody id="score-body"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2">합계</td>
+                <td id="score-total">0</td>
+                <td id="score-verdict">+0</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="btn-row">
+            <button id="btn-again" class="primary-btn" type="button">다시 치기</button>
+            <button id="btn-copy" class="ghost-btn" type="button">기록 복사하기</button>
+          </div>
+          <p id="copy-hint" class="copy-hint"></p>
+        </div>
+      </div>
+
+      <!-- 도움말 -->
+      <div id="help" class="overlay hidden">
+        <div class="card help-card">
+          <h2>조작법</h2>
+          <ul class="help-list">
+            <li><b>퍼팅</b> — 공을 잡고 <b>뒤로 당긴</b> 뒤 놓으면, 당긴 반대 방향으로 날아가요. 당긴 길이가 파워!</li>
+            <li><b>카메라</b> — 두 손가락으로 드래그(모바일) 또는 <b>마우스 오른쪽 드래그</b>/<b>A · D</b> 키로 회전.</li>
+            <li><b>단축키</b> — <b>M</b> 소리, <b>R</b> 공 되돌리기(+1벌타), <b>H</b> 도움말.</li>
+            <li><b>함께 치기</b> — 같은 브라우저에서 탭을 여러 개 열면 서로의 공과 이모지가 실시간으로 보여요.</li>
+          </ul>
+          <p class="help-note">워터 해저드에 빠지면 마지막 샷 위치로 돌아가고 1벌타가 붙습니다.</p>
+          <button id="btn-help-close" class="primary-btn" type="button">알겠어요</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
