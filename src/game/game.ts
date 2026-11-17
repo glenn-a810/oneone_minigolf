@@ -61,10 +61,19 @@ const AIM_DOT_COUNT = 30;
 const PREVIEW_INTERVAL = 0.08;
 
 const aimDotMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
+  color: 0xffb35c,
+  transparent: true,
+  opacity: 0.98,
+  depthWrite: false,
+  toneMapped: false,
+});
+
+const aimDashMaterial = new THREE.MeshBasicMaterial({
+  color: 0xfff1c4,
   transparent: true,
   opacity: 0.85,
   depthWrite: false,
+  toneMapped: false,
 });
 
 const _vec = new THREE.Vector3();
@@ -77,7 +86,7 @@ export class Game {
   private readonly audio: AudioEngine;
   private readonly realtime: Realtime;
 
-  private readonly rig = new CameraRig(0.36, 11);
+  private readonly rig = new CameraRig(0.42, 10.5);
   private readonly effects: Effects;
   private readonly remotes: Remotes;
 
@@ -86,6 +95,7 @@ export class Game {
   private golfer: Golfer | null = null;
 
   private readonly aimDots: THREE.Mesh[] = [];
+  private readonly aimDashes: THREE.Mesh[] = [];
   private readonly aimRing: THREE.Mesh;
   private readonly aimLandingRing: THREE.Mesh;
   private readonly aimGuide = new THREE.Group();
@@ -130,7 +140,7 @@ export class Game {
     this.remotes = new Remotes(this.scene);
 
     // 조준 가이드: 점선 궤적 + 착지 링 + 정지 지점 링
-    const dotGeo = new THREE.CircleGeometry(0.055, 12);
+    const dotGeo = new THREE.SphereGeometry(0.16, 10, 8);
     dotGeo.rotateX(-Math.PI / 2);
     for (let i = 0; i < AIM_DOT_COUNT; i += 1) {
       const dot = new THREE.Mesh(dotGeo, aimDotMaterial);
@@ -139,25 +149,50 @@ export class Game {
       this.aimGuide.add(dot);
       this.aimDots.push(dot);
     }
-    const ringGeo = new THREE.RingGeometry(0.34, 0.43, 32);
+    const ringGeo = new THREE.RingGeometry(0.42, 0.56, 36);
     ringGeo.rotateX(-Math.PI / 2);
     this.aimRing = new THREE.Mesh(
       ringGeo,
-      new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9, depthWrite: false }),
+      new THREE.MeshBasicMaterial({
+        color: 0xffe066,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
     );
     this.aimRing.renderOrder = 3;
     this.aimRing.visible = false;
     this.aimGuide.add(this.aimRing);
 
-    const landingGeo = new THREE.RingGeometry(0.5, 0.62, 36);
+    const landingGeo = new THREE.RingGeometry(0.6, 0.78, 40);
     landingGeo.rotateX(-Math.PI / 2);
     this.aimLandingRing = new THREE.Mesh(
       landingGeo,
-      new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.55, depthWrite: false }),
+      new THREE.MeshBasicMaterial({
+        color: 0x8fe9ff,
+        transparent: true,
+        opacity: 0.75,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
     );
     this.aimLandingRing.renderOrder = 3;
     this.aimLandingRing.visible = false;
     this.aimGuide.add(this.aimLandingRing);
+
+    // 바닥 조준 점선 (공에서 목표 방향으로)
+    const dashGeo = new THREE.PlaneGeometry(0.16, 1.1);
+    dashGeo.rotateX(-Math.PI / 2);
+    for (let i = 0; i < 18; i += 1) {
+      const dash = new THREE.Mesh(dashGeo, aimDashMaterial);
+      dash.visible = false;
+      dash.renderOrder = 4;
+      this.aimGuide.add(dash);
+      this.aimDashes.push(dash);
+    }
 
     this.aimGuide.visible = false;
     this.scene.add(this.aimGuide);
@@ -172,9 +207,9 @@ export class Game {
     this.refreshRecommended(HOLES[0].tee[0], HOLES[0].tee[1]);
     this.aimYaw = this.yawTo(HOLES[0].tee[0], HOLES[0].tee[1], HOLES[0].cup[0], HOLES[0].cup[1]);
     this.rig.setAim(this.aimYaw, true);
-    this.rig.setDistance(16);
-    this.rig.setPitch(0.34);
-    this.rig.update(0.016, this.focusPoint(), this.camera, true, 6);
+    this.rig.setDistance(18);
+    this.rig.setPitch(0.5);
+    this.rig.update(0.016, this.focusPoint(), this.camera, true, 2);
   }
 
   // ---------------------------------------------------------------- 입장/홀 진행
@@ -214,9 +249,9 @@ export class Game {
     this.effects.clearTrail();
 
     this.rig.setAim(this.aimYaw, true);
-    this.rig.setDistance(13);
-    this.rig.setPitch(0.34);
-    this.rig.update(0.016, this.focusPoint(), this.camera, true, 5);
+    this.rig.setDistance(10.5);
+    this.rig.setPitch(0.42);
+    this.rig.update(0.016, this.focusPoint(), this.camera, true, 2);
 
     this.ensureGolfer();
     this.events.onHole?.(spec, this.holeIndex, this.strokes);
@@ -408,15 +443,15 @@ export class Game {
   private updateCamera(dt: number): void {
     if (this.state === 'flight' || this.state === 'sinking') {
       this.rig.setAim(this.aimYaw);
-      this.rig.setDistance(this.ball.airborne ? 17 : 14);
-      this.rig.setPitch(0.3);
-      this.rig.update(dt, this.focusPoint(), this.camera, false, 2);
+      this.rig.setDistance(this.ball.airborne ? 16 : 13);
+      this.rig.setPitch(0.36);
+      this.rig.update(dt, this.focusPoint(), this.camera, false, 3);
       return;
     }
     this.rig.setAim(this.aimYaw);
-    this.rig.setDistance(this.state === 'finished' ? 14 : 11.5);
-    this.rig.setPitch(0.36);
-    this.rig.update(dt, this.focusPoint(), this.camera, false, 4.5);
+    this.rig.setDistance(this.state === 'finished' ? 13 : 10.5);
+    this.rig.setPitch(0.42);
+    this.rig.update(dt, this.focusPoint(), this.camera, false, 1.5);
   }
 
   private syncVisuals(dt: number): void {
@@ -520,7 +555,7 @@ export class Game {
     this.effects.clearTrail();
     this.aimYaw = this.yawTo(this.ball.x, this.ball.z, this.course?.cup.x ?? 0, this.course?.cup.z ?? 0);
     this.refreshRecommended(this.ball.x, this.ball.z);
-    this.rig.setDistance(11.5);
+    this.rig.setDistance(10.5);
 
     if (this.strokes >= this.strokeLimit()) {
       this.pickUp();
@@ -618,7 +653,7 @@ export class Game {
     this.meter.reset();
     this.aimYaw = this.yawTo(this.ball.x, this.ball.z, this.course?.cup.x ?? 0, this.course?.cup.z ?? 0);
     this.refreshRecommended(this.ball.x, this.ball.z);
-    this.rig.setDistance(11.5);
+    this.rig.setDistance(10.5);
 
     this.events.onStroke?.(this.strokes);
     this.events.onPenalty?.(kind, this.strokes);
@@ -852,8 +887,31 @@ export class Game {
       this.aimLandingRing.visible = false;
     }
 
+    // 바닥 점선: 공 → 착지점(또는 정지점)
+    const target = preview.rest ?? preview.landing;
+    const forwardX = Math.sin(this.aimYaw);
+    const forwardZ = -Math.cos(this.aimYaw);
+    const reach = target
+      ? Math.hypot(target.x - this.ball.x, target.z - this.ball.z)
+      : 40;
+    const dashCount = Math.min(this.aimDashes.length, Math.max(0, Math.floor((reach - 1.5) / 2.1)));
+    for (let i = 0; i < this.aimDashes.length; i += 1) {
+      const dash = this.aimDashes[i];
+      if (i >= dashCount) {
+        dash.visible = false;
+        continue;
+      }
+      const step = 1.8 + i * 2.1;
+      dash.visible = true;
+      dash.position.set(this.ball.x + forwardX * step, 0.055, this.ball.z + forwardZ * step);
+      dash.rotation.y = this.aimYaw;
+      const scale = 1 - (i / this.aimDashes.length) * 0.45;
+      dash.scale.set(scale, 1, scale);
+    }
+
     this.aimGuide.visible = true;
-    aimDotMaterial.opacity = preview.water ? 0.35 : 0.8;
+    aimDotMaterial.opacity = preview.water ? 0.5 : 0.98;
+    aimDashMaterial.color.setHex(preview.water ? 0xff8f8f : 0xfff1c4);
   }
 
   private hideAimGuide(): void {
@@ -862,6 +920,9 @@ export class Game {
     this.aimLandingRing.visible = false;
     this.aimDots.forEach((dot) => {
       dot.visible = false;
+    });
+    this.aimDashes.forEach((dash) => {
+      dash.visible = false;
     });
   }
 

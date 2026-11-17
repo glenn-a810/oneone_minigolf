@@ -1,7 +1,7 @@
 /** 게임 전역 상수 — 물리/조작감 튜닝 값은 여기서 한 번에 고친다. */
 
 /** 공 반지름 (m). 실제 골프공보다 조금 크게 잡아 화면에서 잘 보이게 한다. */
-export const BALL_RADIUS = 0.09;
+export const BALL_RADIUS = 0.115;
 /** 컵 판정 반경 (공 중심 기준, m) */
 export const CUP_RADIUS = 0.16;
 /** 컵 근처에서 공이 살짝 빨려 들어가는 반경 */

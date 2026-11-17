@@ -19,8 +19,8 @@ import {
  * 모든 지면은 y=0 평면에 상면이 오도록 만들고, 연못만 -0.14 로 파인다.
  */
 
-const ISLAND_DEPTH = 1.6;
-const APRON_Y = -1.6;
+const ISLAND_DEPTH = 0.4;
+const APRON_Y = -0.4;
 
 export interface Pt {
   x: number;
@@ -174,6 +174,8 @@ function extrudedGround(polygon: Pt[], holes: Pt[][], depth: number): THREE.Buff
     steps: 1,
   });
   geometry.rotateX(-Math.PI / 2);
+  // 압출 두께가 위로 솟지 않고 땅속으로 내려가도록 내린다 (상면이 정확히 y=0)
+  geometry.translate(0, -depth, 0);
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -313,8 +315,9 @@ export class Course {
       roughness: 0.97,
     });
 
+    const soilMat = this.material({ color: 0x8a7350, roughness: 1, flatShading: true });
     const islandGeo = extrudedGround(this.islandPoly, holes, ISLAND_DEPTH);
-    const island = new THREE.Mesh(islandGeo, islandTop);
+    const island = new THREE.Mesh(islandGeo, [islandTop, soilMat]);
     island.receiveShadow = true;
     this.geometries.push(islandGeo);
     this.group.add(island);
@@ -328,7 +331,7 @@ export class Course {
     });
     const fairwayGeo = extrudedGround(corridorPolygon(this.fairwayLine, hole.fairwayWidth), [], 0.05);
     const fairway = new THREE.Mesh(fairwayGeo, fairwayMat);
-    fairway.position.y = 0.006;
+    fairway.position.y = 0.008;
     fairway.receiveShadow = true;
     this.geometries.push(fairwayGeo);
     this.group.add(fairway);
