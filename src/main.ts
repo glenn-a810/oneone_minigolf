@@ -203,13 +203,14 @@ function renderRange(clubId: ClubId, distance: number, clubMax: number): void {
   rangeClub.textContent = club.code;
 }
 
-function renderTargetMarker(needed: number, distance: number): void {
+function renderTargetMarker(needed: number, distance: number, clubMax: number): void {
   const short = needed > 1.02;
+  const gap = Math.max(1, Math.round(distance - clubMax));
   gaugeTarget.style.left = `${gaugePercent(short ? 1 : Math.max(0, needed))}%`;
   gaugeTarget.classList.toggle('short', short);
   liveGoal.classList.toggle('short', short);
   liveGoal.textContent = short
-    ? `🎯 ${meters(distance)} · 클럽 부족`
+    ? `🎯 ${meters(distance)} · ${gap}m 부족`
     : `🎯 목표 ${Math.round(Math.min(1, Math.max(0, needed)) * 100)}%`;
 }
 
@@ -231,7 +232,7 @@ function renderGauge(view: GaugeView): void {
   gaugeHint.textContent = view.hint;
 
   // 목표 거리까지 필요한 파워 위치에 핀 마커 + 현재 파워 % · 예상 비거리
-  renderTargetMarker(view.neededPower, view.distance);
+  renderTargetMarker(view.neededPower, view.distance, view.clubMax);
   gaugeTarget.classList.toggle('live', gaugeLive);
   livePower.textContent = `${view.powerPercent}%`;
   liveDist.textContent = meters(view.estimate);
@@ -264,7 +265,8 @@ function renderClub(clubId: ClubId, recommended: ClubId, distance: number, surfa
   clubRow.querySelectorAll<HTMLButtonElement>('.club-chip').forEach((button) => {
     const id = button.dataset.club as ClubId | undefined;
     button.classList.toggle('active', id === clubId);
-    button.classList.toggle('recommended', id === recommended && id !== clubId);
+    // 추천 클럽은 지금 골라져 있어도 항상 '추천' 뱃지를 보여준다
+    button.classList.toggle('recommended', id === recommended);
     button.setAttribute('aria-pressed', String(id === clubId));
   });
   const club = getClub(clubId);
@@ -285,7 +287,7 @@ CLUBS.forEach((club) => {
   const code = document.createElement('b');
   code.textContent = club.code;
   const name = document.createElement('span');
-  name.textContent = club.name.replace('번 아이언', '번').replace('피칭웨지', '피칭').replace('샌드웨지', '샌드');
+  name.textContent = club.short;
   button.append(code, name);
   clubRow.appendChild(button);
 });
@@ -900,7 +902,7 @@ window.setInterval(() => {
   renderRange(game.currentClub.id, distance, game.clubMax);
   livePower.textContent = '0%';
   liveDist.textContent = meters(0);
-  renderTargetMarker(game.neededPower, distance);
+  renderTargetMarker(game.neededPower, distance, game.clubMax);
 }, 200);
 
 window.addEventListener('beforeunload', () => input.dispose());

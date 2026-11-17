@@ -846,6 +846,7 @@ body {
   padding: 10px 16px;
   font-size: 13px;
   border-radius: 12px;
+  white-space: nowrap;
 }
 
 .onb-links {
@@ -1312,7 +1313,7 @@ body {
 
 .club-row {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
@@ -1328,7 +1329,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   border-radius: 12px;
   border: 1px solid rgba(22, 50, 59, 0.12);
   background: #ffffff;

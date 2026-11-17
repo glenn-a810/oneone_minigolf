@@ -525,18 +525,23 @@ export class Game {
     const flying = this.state === 'flight' || this.state === 'sinking';
 
     switch (this.viewMode) {
-      case 'top':
+      case 'top': {
         // 전체 코스 탑뷰: 티와 그린 사이를 넓게 내려다본다
-        this.rig.setDistance(this.topViewDistance());
-        this.rig.setPitch(1.16);
+        const span = this.holeSpan();
+        this.rig.setDistance(THREE.MathUtils.clamp(span * 1.2, 32, 74));
+        this.rig.setPitch(1.06);
         this.rig.update(dt, this.topViewFocus(), this.camera, false, 0);
         return;
-      case 'target':
-        // 찜지 예정 지점/그린 상공 타겟뷰: 착지 링·그린·벙커·연못이 한눈에
-        this.rig.setDistance(flying ? 19 : 20);
-        this.rig.setPitch(0.6);
-        this.rig.update(dt, this.targetViewFocus(), this.camera, false, 0);
+      }
+      case 'target': {
+        // 착지 예정 지점/그린 상공 타겟뷰: 착지 링·그린·벙커·연못이 한눈에
+        const focus = this.targetViewFocus();
+        const span = Math.hypot(focus.x - this.ball.x, focus.z - this.ball.z);
+        this.rig.setDistance(THREE.MathUtils.clamp(14 + span * 0.95, 15, 42));
+        this.rig.setPitch(0.78);
+        this.rig.update(dt, focus, this.camera, false, 0);
         return;
+      }
       default:
         break;
     }
@@ -552,27 +557,32 @@ export class Game {
     this.rig.update(dt, this.focusPoint(), this.camera, false, 1.5);
   }
 
-  /** 타겟뷰 시선: 조준한 착지 지점(없으면 그린 중앙), 비행 중에는 공 */
+  /** 티(공) ↔ 그린 중앙 거리 */
+  private holeSpan(): number {
+    const green = HOLES[this.holeIndex].green;
+    return Math.hypot(green.x - this.ball.x, green.z - this.ball.z);
+  }
+
+  /** 타겟뷰 시선: 착지점과 정지점 사이(없으면 컴), 비행 중에는 공 */
   private targetViewFocus(): THREE.Vector3 {
     if (this.state === 'flight' || this.state === 'sinking') {
       return _camFocus.set(this.ball.x, this.ball.y, this.ball.z);
     }
-    const target = this.preview?.rest ?? this.preview?.landing;
+    const landing = this.preview?.landing ?? null;
+    const rest = this.preview?.rest ?? null;
+    if (landing && rest) {
+      return _camFocus.set((landing.x + rest.x) / 2, 0.15, (landing.z + rest.z) / 2);
+    }
+    const target = rest ?? landing;
     if (target) return _camFocus.set(target.x, 0.15, target.z);
     const cup = this.course?.cup;
     return cup ? _camFocus.set(cup.x, 0.15, cup.z) : _camFocus.set(this.ball.x, 0.15, this.ball.z);
   }
 
-  /** 탑뷰 시선: 티(공)와 그린 중앙의 중간 */
+  /** 탑뷰 시선: 티(공)에서 그린 쪽으로 40% 지점 */
   private topViewFocus(): THREE.Vector3 {
     const green = HOLES[this.holeIndex].green;
-    return _camFocus.set((this.ball.x + green.x) / 2, 0.2, (this.ball.z + green.z) / 2);
-  }
-
-  private topViewDistance(): number {
-    const green = HOLES[this.holeIndex].green;
-    const span = Math.hypot(green.x - this.ball.x, green.z - this.ball.z);
-    return THREE.MathUtils.clamp(span * 1.5, 34, 86);
+    return _camFocus.set(this.ball.x + (green.x - this.ball.x) * 0.42, 0.2, this.ball.z + (green.z - this.ball.z) * 0.42);
   }
 
   private syncVisuals(dt: number): void {

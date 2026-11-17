@@ -16,6 +16,8 @@ export interface Club {
   /** 버튼·HUD 에 쓰는 짧은 표기 */
   code: string;
   name: string;
+  /** 클럽 버튼에 붙는 한 단어 이름 */
+  short: string;
   /** 로프트 각 (도) */
   loft: number;
   /** 풀파워 발사 속도 (m/s) */
@@ -33,14 +35,14 @@ export interface Club {
 }
 
 export const CLUBS: Club[] = [
-  { id: '1W', code: '1W', name: '드라이버', loft: 12, speed: 35, carry: 44.3, total: 58.4, apex: 2.6, note: '가장 멀리 · 낮은 탄도 · 긴 런', roll: false },
-  { id: '3W', code: '3W', name: '우드', loft: 17, speed: 28, carry: 39.9, total: 47.8, apex: 3.3, note: '페어웨이 우드 · 중간 탄도', roll: false },
-  { id: '5I', code: '5I', name: '5번 아이언', loft: 25, speed: 21.9, carry: 34.1, total: 37.7, apex: 4.2, note: '긴 아이언 · 낮은 런', roll: false },
-  { id: '7I', code: '7I', name: '7번 아이언', loft: 33, speed: 18, carry: 28, total: 29.7, apex: 4.7, note: '기본 아이언 · 높은 탄도', roll: false },
-  { id: '9I', code: '9I', name: '9번 아이언', loft: 40, speed: 15.2, carry: 22, total: 22.7, apex: 4.7, note: '짧은 아이언 · 부드러운 착지', roll: false },
-  { id: 'PW', code: 'PW', name: '피칭웨지', loft: 48, speed: 12.8, carry: 16, total: 16.4, apex: 4.5, note: '어프로치 · 거의 안 굴러감', roll: false },
-  { id: 'SW', code: 'SW', name: '샌드웨지', loft: 58, speed: 10.5, carry: 10, total: 10.2, apex: 4, note: '높이 띄우기 · 벙커 탈출', roll: false },
-  { id: 'PT', code: 'PT', name: '퍼터', loft: 0, speed: 8, carry: 0, total: 20.6, apex: 0, note: '그린에서 굴리기', roll: true },
+  { id: '1W', code: '1W', name: '드라이버', short: '드라이버', loft: 12, speed: 35, carry: 44.3, total: 58.4, apex: 2.6, note: '가장 멀리 · 낮은 탄도 · 긴 런', roll: false },
+  { id: '3W', code: '3W', name: '우드', short: '우드', loft: 17, speed: 28, carry: 39.9, total: 47.8, apex: 3.3, note: '페어웨이 우드 · 중간 탄도', roll: false },
+  { id: '5I', code: '5I', name: '5번 아이언', short: '아이언', loft: 25, speed: 21.9, carry: 34.1, total: 37.7, apex: 4.2, note: '긴 아이언 · 낮은 런', roll: false },
+  { id: '7I', code: '7I', name: '7번 아이언', short: '아이언', loft: 33, speed: 18, carry: 28, total: 29.7, apex: 4.7, note: '기본 아이언 · 높은 탄도', roll: false },
+  { id: '9I', code: '9I', name: '9번 아이언', short: '아이언', loft: 40, speed: 15.2, carry: 22, total: 22.7, apex: 4.7, note: '짧은 아이언 · 부드러운 착지', roll: false },
+  { id: 'PW', code: 'PW', name: '피칭웨지', short: '피칭', loft: 48, speed: 12.8, carry: 16, total: 16.4, apex: 4.5, note: '어프로치 · 거의 안 굴러감', roll: false },
+  { id: 'SW', code: 'SW', name: '샌드웨지', short: '샌드', loft: 58, speed: 10.5, carry: 10, total: 10.2, apex: 4, note: '높이 띄우기 · 벙커 탈출', roll: false },
+  { id: 'PT', code: 'PT', name: '퍼터', short: '퍼터', loft: 0, speed: 8, carry: 0, total: 20.6, apex: 0, note: '그린에서 굴리기', roll: true },
 ];
 
 export function getClub(id: ClubId): Club {
