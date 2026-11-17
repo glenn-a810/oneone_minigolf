@@ -733,6 +733,9 @@ export class Lobby {
       if (Math.hypot(x - 7.8, z + 3.4) < 3.4) continue;
       if (Math.hypot(x - -8.2, z - 3.8) < 3.9) continue;
       if (Math.abs(x) < 2.4 && z < -5) continue;
+      if (this.obstacles.some((obstacle) => Math.hypot(x - obstacle.x, z - obstacle.z) < obstacle.r + 0.85)) {
+        continue;
+      }
       if (from && Math.hypot(x - from.x, z - from.z) < 2.2) continue;
       return new THREE.Vector3(x, 0, z);
     }
@@ -984,6 +987,7 @@ export class Lobby {
           const nz = dz / distance;
           guest.pos.x += nx * guest.speed * dt;
           guest.pos.z += nz * guest.speed * dt;
+          this.resolve(guest.pos);
           guest.heading = Math.atan2(nx, nz);
           guest.golfer.update(dt, true);
         }
