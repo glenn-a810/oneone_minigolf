@@ -253,6 +253,9 @@ export class Lobby {
     this.target = null;
     this.enterCooldown = 1.5;
     this.cameraSnap = true;
+    // 게이트 근처 상태를 다시 계산해 입장 버튼이 바로 뜨게 한다
+    this.nearGate = false;
+    this.events.onGateChange?.(false);
     if (this.localGolfer) {
       this.localGolfer.group.position.copy(this.localPos);
       this.localGolfer.group.rotation.y = this.localHeading;
