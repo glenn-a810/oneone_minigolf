@@ -537,8 +537,8 @@ export class Game {
         // 착지 예정 지점/그린 상공 타겟뷰: 착지 링·그린·벙커·연못이 한눈에
         const focus = this.targetViewFocus();
         const span = Math.hypot(focus.x - this.ball.x, focus.z - this.ball.z);
-        this.rig.setDistance(THREE.MathUtils.clamp(14 + span * 0.95, 15, 42));
-        this.rig.setPitch(0.78);
+        this.rig.setDistance(THREE.MathUtils.clamp(14 + span * 0.7, 16, 42));
+        this.rig.setPitch(0.72);
         this.rig.update(dt, focus, this.camera, false, 0);
         return;
       }
@@ -571,7 +571,8 @@ export class Game {
     const landing = this.preview?.landing ?? null;
     const rest = this.preview?.rest ?? null;
     if (landing && rest) {
-      return _camFocus.set((landing.x + rest.x) / 2, 0.15, (landing.z + rest.z) / 2);
+      // 착지점에서 정지점 방향으로 40% 지점 — 두 링이 모두 화면에 들어오도록
+      return _camFocus.set(landing.x + (rest.x - landing.x) * 0.4, 0.15, landing.z + (rest.z - landing.z) * 0.4);
     }
     const target = rest ?? landing;
     if (target) return _camFocus.set(target.x, 0.15, target.z);
