@@ -7,7 +7,14 @@ interface InputHooks {
   isActive?: () => boolean;
 }
 
-/** 캔버스 포인터(마우스/터치)와 키보드를 게임 조작으로 연결한다. */
+/**
+ * 캔버스 포인터(마우스/터치)와 키보드를 골프 조작으로 연결한다.
+ *
+ * - 화면 좌우 드래그: 조준 회전
+ * - ←/→ 또는 A/D: 조준 미세 회전
+ * - 스페이스/엔터: 스윙 게이지 탭 (시작 → 파워 → 임팩트)
+ * - R: 공 되돌리기(+1벌타) · M: 소리 · H: 도움말
+ */
 export class InputController {
   constructor(
     private readonly element: HTMLCanvasElement,
@@ -51,19 +58,18 @@ export class InputController {
     switch (event.key.toLowerCase()) {
       case 'a':
       case 'arrowleft':
-        this.game.orbitBy(-55, 0);
+        event.preventDefault();
+        this.game.aimBy(-0.04);
         break;
       case 'd':
       case 'arrowright':
-        this.game.orbitBy(55, 0);
+        event.preventDefault();
+        this.game.aimBy(0.04);
         break;
-      case 'w':
-      case 'arrowup':
-        this.game.orbitBy(0, -35);
-        break;
-      case 's':
-      case 'arrowdown':
-        this.game.orbitBy(0, 35);
+      case ' ':
+      case 'enter':
+        event.preventDefault();
+        this.game.swingTap();
         break;
       case 'r':
         this.game.resetBall();

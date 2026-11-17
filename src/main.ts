@@ -1,13 +1,15 @@
 import './style.css';
 import * as THREE from 'three';
-import { Game, verdictLabel, type BannerTone } from './game/game';
-import type { HoleSpec, PlayerIdentity, PlayerSnapshot, RoundResult } from './game/types';
+import { Game, verdictLabel, type BannerTone, type GaugeView } from './game/game';
+import type { HoleSpec, PlayerIdentity, PlayerSnapshot, RoundResult, SurfaceKind } from './game/types';
 import { BALL_COLORS, EMOJIS, randomNickname } from './game/constants';
 import { HOLES } from './game/courses';
 import { AudioEngine } from './game/audio';
 import { createRealtime } from './net/realtime';
 import { InputController } from './game/input';
 import { Lobby, type LobbyPeer } from './lobby/lobby';
+import { SURFACE_LABEL, CLUBS, getClub, type ClubId } from './game/clubs';
+import { applyRendererLook, buildSky } from './game/environment';
 
 function $(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -35,65 +37,74 @@ try {
   throw new Error('WebGL unavailable');
 }
 
+applyRendererLook(renderer);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-const camera = new THREE.PerspectiveCamera(56, 1, 0.1, 260);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 320);
 
 /** 플레이룸(미니골프) 씬 */
 const gameScene = new THREE.Scene();
 gameScene.background = new THREE.Color(0xbfe6ff);
-gameScene.fog = new THREE.Fog(0xbfe6ff, 30, 68);
+gameScene.fog = new THREE.Fog(0xcfeaff, 62, 180);
+buildSky(gameScene, {
+  radius: 170,
+  cloudCount: 10,
+  sunDirection: new THREE.Vector3(0.42, 0.66, 0.46),
+});
 
-const gameHemi = new THREE.HemisphereLight(0xffffff, 0x9fce87, 1.05);
+const gameHemi = new THREE.HemisphereLight(0xe6f6ff, 0x7ea76b, 0.85);
 gameScene.add(gameHemi);
 
-const gameSun = new THREE.DirectionalLight(0xfff4e0, 2.0);
-gameSun.position.set(7, 13, 9);
+const gameSun = new THREE.DirectionalLight(0xfff1d6, 2.5);
+gameSun.position.set(18, 26, 16);
 gameSun.castShadow = true;
-gameSun.shadow.mapSize.set(1024, 1024);
-gameSun.shadow.camera.left = -14;
-gameSun.shadow.camera.right = 14;
-gameSun.shadow.camera.top = 14;
-gameSun.shadow.camera.bottom = -14;
+gameSun.shadow.mapSize.set(2048, 2048);
+gameSun.shadow.camera.left = -28;
+gameSun.shadow.camera.right = 28;
+gameSun.shadow.camera.top = 28;
+gameSun.shadow.camera.bottom = -28;
 gameSun.shadow.camera.near = 0.5;
-gameSun.shadow.camera.far = 46;
-gameSun.shadow.bias = -0.0006;
-gameSun.shadow.normalBias = 0.02;
+gameSun.shadow.camera.far = 110;
+gameSun.shadow.bias = -0.0004;
+gameSun.shadow.normalBias = 0.035;
 gameScene.add(gameSun);
 gameScene.add(gameSun.target);
 
-const gameFill = new THREE.DirectionalLight(0xbfe4ff, 0.35);
-gameFill.position.set(-8, 6, -10);
+const gameFill = new THREE.DirectionalLight(0xc6e4ff, 0.45);
+gameFill.position.set(-14, 10, -18);
 gameScene.add(gameFill);
 
-/** 대기실(클럽하우스) 씬 */
+// ---------------------------------------------------------------- 대기실 씬
+
 const lobbyScene = new THREE.Scene();
 lobbyScene.background = new THREE.Color(0xcdeeff);
-lobbyScene.fog = new THREE.Fog(0xcdeeff, 46, 104);
+lobbyScene.fog = new THREE.Fog(0xd9f1ff, 58, 170);
+buildSky(lobbyScene, {
+  radius: 190,
+  cloudCount: 8,
+  sunDirection: new THREE.Vector3(0.5, 0.6, 0.42),
+});
 
-const lobbyHemi = new THREE.HemisphereLight(0xffffff, 0x9ad07a, 1.2);
+const lobbyHemi = new THREE.HemisphereLight(0xffffff, 0x93c878, 0.95);
 lobbyScene.add(lobbyHemi);
 
-const lobbySun = new THREE.DirectionalLight(0xfff6e2, 2.1);
-lobbySun.position.set(12, 18, 10);
+const lobbySun = new THREE.DirectionalLight(0xfff5e0, 2.4);
+lobbySun.position.set(16, 22, 12);
 lobbySun.castShadow = true;
-lobbySun.shadow.mapSize.set(1536, 1536);
-lobbySun.shadow.camera.left = -22;
-lobbySun.shadow.camera.right = 22;
-lobbySun.shadow.camera.top = 22;
-lobbySun.shadow.camera.bottom = -22;
+lobbySun.shadow.mapSize.set(2048, 2048);
+lobbySun.shadow.camera.left = -26;
+lobbySun.shadow.camera.right = 26;
+lobbySun.shadow.camera.top = 26;
+lobbySun.shadow.camera.bottom = -26;
 lobbySun.shadow.camera.near = 0.5;
-lobbySun.shadow.camera.far = 60;
-lobbySun.shadow.bias = -0.0005;
-lobbySun.shadow.normalBias = 0.03;
+lobbySun.shadow.camera.far = 80;
+lobbySun.shadow.bias = -0.0004;
+lobbySun.shadow.normalBias = 0.04;
 lobbyScene.add(lobbySun);
 lobbyScene.add(lobbySun.target);
 
-const lobbyFill = new THREE.DirectionalLight(0xd6ecff, 0.4);
-lobbyFill.position.set(-12, 8, -14);
+const lobbyFill = new THREE.DirectionalLight(0xd6ecff, 0.5);
+lobbyFill.position.set(-14, 9, -16);
 lobbyScene.add(lobbyFill);
 
 // ---------------------------------------------------------------- 게임/오디오/네트워크
@@ -113,6 +124,21 @@ const help = $('help');
 const fadeEl = $('fade');
 const gateButton = $button('btn-gate');
 
+const gaugeEl = $('gauge');
+const gaugeFill = $('gauge-fill');
+const gaugeMarker = $('gauge-marker');
+const gaugePower = $('gauge-power');
+const gaugeHint = $('gauge-hint');
+const swingButton = $button('btn-swing');
+const swingLabel = $('swing-label');
+const swingSub = $('swing-sub');
+const clubRow = $('clubs');
+const shotDist = $('shot-dist');
+const shotLie = $('shot-lie');
+const shotClub = $('shot-club');
+const aimLeft = $button('btn-aim-left');
+const aimRight = $button('btn-aim-right');
+
 let bannerTimer = 0;
 let toastTimer = 0;
 
@@ -125,14 +151,14 @@ function showBanner(title: string, sub = '', tone: BannerTone = 'coral'): void {
   void banner.offsetWidth;
   banner.style.animation = '';
   window.clearTimeout(bannerTimer);
-  bannerTimer = window.setTimeout(() => banner.classList.add('hidden'), 2400);
+  bannerTimer = window.setTimeout(() => banner.classList.add('hidden'), 2500);
 }
 
 function showToast(text: string): void {
   toast.textContent = text;
   toast.classList.remove('hidden');
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.add('hidden'), 2200);
+  toastTimer = window.setTimeout(() => toast.classList.add('hidden'), 2300);
 }
 
 // ---------------------------------------------------------------- 화면 모드
@@ -153,6 +179,116 @@ function fadeTo(action: () => void): void {
   }, 200);
 }
 
+// ---------------------------------------------------------------- HUD: 게이지/클럽
+
+const gaugePercent = (value: number): number => ((value + 0.25) / 1.25) * 100;
+
+let gaugeLive = false;
+
+function renderGauge(view: GaugeView): void {
+  const value = Math.max(-0.25, Math.min(1, view.value));
+  gaugeMarker.style.left = `${gaugePercent(value)}%`;
+
+  const fillAmount = view.phase === 'power' ? value : view.power;
+  gaugeFill.style.width = `${Math.max(0, fillAmount) * 80}%`;
+
+  const showPower = view.phase === 'impact' || view.phase === 'done';
+  gaugePower.style.display = showPower ? 'block' : 'none';
+  gaugePower.style.left = `${gaugePercent(view.power)}%`;
+
+  gaugeLive = view.phase === 'power' || view.phase === 'impact';
+  gaugeEl.classList.toggle('live', gaugeLive);
+  gaugeEl.classList.toggle('hit', view.phase === 'impact' && Math.abs(view.value) <= 0.105);
+
+  gaugeHint.textContent = view.hint;
+
+  if (view.phase === 'idle' || view.phase === 'done') {
+    swingLabel.textContent = '스윙!';
+    swingSub.textContent = '탭 3번';
+    swingButton.classList.remove('armed', 'impact');
+  } else if (view.phase === 'power') {
+    swingLabel.textContent = '파워!';
+    swingSub.textContent = '지금 탭';
+    swingButton.classList.add('armed');
+    swingButton.classList.remove('impact');
+  } else {
+    swingLabel.textContent = '임팩트!';
+    swingSub.textContent = '존에서 탭';
+    swingButton.classList.remove('armed');
+    swingButton.classList.add('impact');
+  }
+
+  const busy = view.phase === 'power' || view.phase === 'impact';
+  clubRow.querySelectorAll<HTMLButtonElement>('.club-chip').forEach((button) => {
+    button.disabled = busy;
+  });
+}
+
+function renderClub(clubId: ClubId, recommended: ClubId, distance: number, surface: SurfaceKind): void {
+  clubRow.querySelectorAll<HTMLButtonElement>('.club-chip').forEach((button) => {
+    const id = button.dataset.club as ClubId | undefined;
+    button.classList.toggle('active', id === clubId);
+    button.classList.toggle('recommended', id === recommended && id !== clubId);
+  });
+  shotClub.textContent = getClub(clubId).name;
+  shotLie.textContent = SURFACE_LABEL[surface];
+  shotDist.textContent = `${distance < 10 ? distance.toFixed(1) : Math.round(distance)}m`;
+}
+
+CLUBS.forEach((club) => {
+  const button = clubRow.querySelector<HTMLButtonElement>(`[data-club="${club.id}"]`);
+  button?.setAttribute('title', club.note);
+});
+
+clubRow.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const button = target.closest<HTMLButtonElement>('.club-chip');
+  if (!button) return;
+  const id = button.dataset.club as ClubId | undefined;
+  if (!id) return;
+  audio.unlock();
+  game.setClub(id);
+  renderActiveClub(id);
+});
+
+function renderActiveClub(id: ClubId): void {
+  clubRow.querySelectorAll<HTMLButtonElement>('.club-chip').forEach((button) => {
+    button.classList.toggle('active', button.dataset.club === id);
+  });
+  shotClub.textContent = getClub(id).name;
+}
+
+function holdAim(button: HTMLButtonElement, delta: number): void {
+  let interval = 0;
+  const start = (event: Event) => {
+    event.preventDefault?.();
+    audio.unlock();
+    game.aimBy(delta);
+    window.clearInterval(interval);
+    interval = window.setInterval(() => game.aimBy(delta), 90);
+  };
+  const stop = () => {
+    window.clearInterval(interval);
+    interval = 0;
+  };
+  button.addEventListener('pointerdown', start);
+  button.addEventListener('pointerup', stop);
+  button.addEventListener('pointerleave', stop);
+  button.addEventListener('pointercancel', stop);
+}
+holdAim(aimLeft, -0.045);
+holdAim(aimRight, 0.045);
+
+swingButton.addEventListener('click', () => {
+  audio.unlock();
+  game.swingTap();
+});
+
+gaugeEl.addEventListener('pointerdown', () => {
+  audio.unlock();
+  game.swingTap();
+});
+
 // ---------------------------------------------------------------- 게임/대기실
 
 const game = new Game({
@@ -167,20 +303,36 @@ const game = new Game({
       $('hole-name').textContent = spec.name;
       $('hole-hint').textContent = spec.hint;
       $('stroke-count').textContent = '0';
-      $('power-fill').style.width = '0%';
-      $('power-hint').textContent = '공을 뒤로 당겨 퍼팅';
+      $('hole-dist').textContent = '0';
       focusSun(spec);
       renderPeers(game.getPeers());
     },
     onStroke: (strokes: number) => {
       $('stroke-count').textContent = String(strokes);
     },
-    onAim: (power: number, active: boolean) => {
-      const fillEl = $('power-fill');
-      fillEl.style.width = `${Math.round(power * 100)}%`;
-      $('power-hint').textContent = active
-        ? `파워 ${Math.round(power * 100)}% · 놓으면 퍼팅`
-        : '공을 뒤로 당겨 퍼팅';
+    onGauge: (view: GaugeView) => {
+      if (mode !== 'game') return;
+      renderGauge(view);
+    },
+    onClub: (clubId: ClubId, recommended: ClubId, distance: number, surface: SurfaceKind) => {
+      if (mode !== 'game') return;
+      renderClub(clubId, recommended, distance, surface);
+    },
+    onShot: (plan, club) => {
+      if (mode !== 'game') return;
+      if (plan.grade === 'perfect') {
+        showToast(`Perfect! ${club.name} 풀 임팩트`);
+      } else if (plan.grade === 'good') {
+        showToast(`Good · 살짝 ${plan.error > 0 ? '훅' : '슬라이스'}`);
+      } else {
+        showToast(`Miss · ${plan.error > 0 ? '훅' : '슬라이스'}가 크게 났어요`);
+      }
+    },
+    onRest: (distance: number, surface: SurfaceKind, strokes: number) => {
+      if (mode !== 'game') return;
+      shotDist.textContent = `${distance < 10 ? distance.toFixed(1) : Math.round(distance)}m`;
+      shotLie.textContent = SURFACE_LABEL[surface];
+      $('stroke-count').textContent = String(strokes);
     },
     onHoled: (holeIndex: number, strokes: number, label: string) => {
       if (mode !== 'game') return;
@@ -311,10 +463,11 @@ function enterPlayroom(): void {
     lobbyHud.classList.add('hidden');
     $('me-name').textContent = me.name;
     ($('me-dot') as HTMLElement).style.background = me.color;
+    mode = 'game';
     game.join(me);
     lobby.setMode('idle');
-    mode = 'game';
-    showBanner('플레이룸 입장', '3홀 미니골프 · 1홀부터 시작합니다', 'plain');
+    renderGauge({ phase: 'idle', value: 0, power: 0, hint: '스윙! 을 눌러 게이지를 시작하세요' });
+    showBanner('플레이룸 입장', '3홀 · 조준하고 3번 탭으로 스윙!', 'plain');
   });
 }
 
@@ -556,8 +709,8 @@ $button('btn-again').addEventListener('click', () => {
 // ---------------------------------------------------------------- 카메라/조명/루프
 
 function focusSun(spec: HoleSpec): void {
-  const [cx, cz] = spec.cup;
-  gameSun.position.set(cx + 7, 13, cz + 9);
+  const [cx, cz] = spec.green ? [spec.green.x, spec.green.z] : spec.cup;
+  gameSun.position.set(cx + 20, 30, cz + 18);
   gameSun.target.position.set(cx, 0, cz);
   gameSun.target.updateMatrixWorld();
 }
@@ -567,7 +720,7 @@ function resize(): void {
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
   camera.aspect = width / Math.max(1, height);
-  camera.fov = width < 560 ? 64 : 56;
+  camera.fov = width < 560 ? 66 : 55;
   camera.updateProjectionMatrix();
 }
 
@@ -594,11 +747,15 @@ function frame(now: number): void {
 
 requestAnimationFrame(frame);
 
-// 게임 HUD의 남은 거리/타수는 프레임과 무관하게 가볍게 갱신
+// HUD의 남은 거리/타수는 프레임과 무관하게 가볍게 갱신
 window.setInterval(() => {
   if (mode !== 'game') return;
-  $('hole-dist').textContent = game.cupDistance().toFixed(1);
+  if (gaugeLive) return;
+  const distance = game.cupDistance();
+  shotDist.textContent = `${distance < 10 ? distance.toFixed(1) : Math.round(distance)}m`;
+  $('hole-dist').textContent = distance < 10 ? distance.toFixed(1) : String(Math.round(distance));
   $('stroke-count').textContent = String(game.currentStrokes);
-}, 180);
+  shotLie.textContent = SURFACE_LABEL[game.surface];
+}, 200);
 
 window.addEventListener('beforeunload', () => input.dispose());

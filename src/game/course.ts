@@ -1,398 +1,541 @@
 import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
-import type { HoleSpec, MoverSpec } from './types';
-import { makeSlabBody, makeWallBody, type PhysicsMaterials } from './physics';
-import { createCloud, createRock, createTree } from './scenery';
+import type { DecorSpec, HoleSpec, SurfaceInfo, ZoneSpec } from './types';
+import type { BallObstacle, SurfaceFn } from './ball';
+import { createBush, createPine, createRock, createTree } from './scenery';
+import {
+  FALLBACK,
+  fairwayTexture,
+  flagTexture,
+  greenTexture,
+  roughTexture,
+  sandTexture,
+  waterTexture,
+} from './textures';
 
-/** 코스 재질 (홀을 바꿔도 재사용) */
-const MAT = {
-  fairway: new THREE.MeshStandardMaterial({ color: 0x8fdc72, roughness: 0.96 }),
-  bridge: new THREE.MeshStandardMaterial({ color: 0xd9b485, roughness: 0.9 }),
-  skirt: new THREE.MeshStandardMaterial({ color: 0xc2a077, roughness: 0.98 }),
-  wall: new THREE.MeshStandardMaterial({ color: 0xfbf6e7, roughness: 0.75 }),
-  bumper: new THREE.MeshStandardMaterial({ color: 0xff7a59, roughness: 0.45 }),
-  bumperRing: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }),
-  hump: new THREE.MeshStandardMaterial({ color: 0x79d363, roughness: 0.94 }),
-  mover: new THREE.MeshStandardMaterial({ color: 0xffa14d, roughness: 0.5 }),
-  water: new THREE.MeshStandardMaterial({
-    color: 0x2fb2e2,
-    roughness: 0.12,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 0.86,
-    depthWrite: false,
-  }),
-  waterSurface: new THREE.MeshStandardMaterial({
-    color: 0x9ae8ff,
-    roughness: 0.05,
-    metalness: 0.2,
-    transparent: true,
-    opacity: 0.65,
-    depthWrite: false,
-  }),
-  cup: new THREE.MeshStandardMaterial({ color: 0x1b2a24, roughness: 0.9 }),
-  pole: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }),
-  flag: new THREE.MeshStandardMaterial({ color: 0xff5c7a, roughness: 0.7, side: THREE.DoubleSide }),
-  teeMark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
-};
+/**
+ * 한 홀의 3D 코스 — 잔디 섬(러프) 위에 페어웨이 리본, 그린, 벙커, 연못, 깃발,
+ * 나무/바위를 절차적 텍스처로 그린다. 동시에 공 물리용 지면 조회(surfaceAt)를 제공한다.
+ *
+ * 모든 지면은 y=0 평면에 상면이 오도록 만들고, 연못만 -0.14 로 파인다.
+ */
 
-interface SlabMesh {
-  mesh: THREE.Mesh;
-  /** 메쉬 상면이 로컬 y=0 이 되도록 하는 오프셋 */
-  topOffset: number;
+const ISLAND_DEPTH = 1.6;
+const APRON_Y = -1.6;
+
+export interface Pt {
+  x: number;
+  z: number;
 }
 
-function roundedRectShape(w: number, d: number, radius: number): THREE.Shape {
-  const x = w / 2;
-  const y = d / 2;
-  const r = Math.max(0.002, Math.min(radius, x * 0.96, y * 0.96));
-  const s = new THREE.Shape();
-  s.moveTo(-x + r, -y);
-  s.lineTo(x - r, -y);
-  s.quadraticCurveTo(x, -y, x, -y + r);
-  s.lineTo(x, y - r);
-  s.quadraticCurveTo(x, y, x - r, y);
-  s.lineTo(-x + r, y);
-  s.quadraticCurveTo(-x, y, -x, y - r);
-  s.lineTo(-x, -y + r);
-  s.quadraticCurveTo(-x, -y, -x + r, -y);
-  return s;
+function smoothPath(points: Array<[number, number]>): Pt[] {
+  const curve = new THREE.CatmullRomCurve3(
+    points.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+    false,
+    'catmullrom',
+    0.4,
+  );
+  const length = curve.getLength();
+  const count = Math.max(16, Math.round(length / 0.6));
+  return curve.getSpacedPoints(count).map((p) => ({ x: p.x, z: p.z }));
 }
 
-/** 모서리가 둥근 얇은 판(잔디/벽/다리). 물리 충돌은 박스로 근사한다. */
-function makeSlab(w: number, d: number, h: number, radius: number): {
-  geometry: THREE.ExtrudeGeometry;
-  topOffset: number;
-} {
-  const bevel = Math.min(0.045, h * 0.25, Math.min(w, d) * 0.05);
-  const geometry = new THREE.ExtrudeGeometry(roundedRectShape(w, d, radius), {
-    depth: Math.max(0.02, h - bevel * 2),
-    bevelEnabled: true,
-    bevelThickness: bevel,
-    bevelSize: bevel,
-    bevelSegments: 2,
-    curveSegments: 5,
+/** 폴리라인을 따라 좌우로 넓힌 리본/섬 폴리곤 */
+function corridorPolygon(line: Pt[], halfWidth: number): Pt[] {
+  const n = line.length;
+  const left: Pt[] = [];
+  const right: Pt[] = [];
+
+  for (let i = 0; i < n; i += 1) {
+    const prev = line[Math.max(0, i - 1)];
+    const next = line[Math.min(n - 1, i + 1)];
+    let tx = next.x - prev.x;
+    let tz = next.z - prev.z;
+    const len = Math.hypot(tx, tz) || 1;
+    tx /= len;
+    tz /= len;
+    const nx = -tz;
+    const nz = tx;
+    left.push({ x: line[i].x + nx * halfWidth, z: line[i].z + nz * halfWidth });
+    right.push({ x: line[i].x - nx * halfWidth, z: line[i].z - nz * halfWidth });
+  }
+
+  const end = line[n - 1];
+  const endPrev = line[Math.max(0, n - 2)];
+  const endDir = { x: end.x - endPrev.x, z: end.z - endPrev.z };
+  const endLen = Math.hypot(endDir.x, endDir.z) || 1;
+  const endTan = { x: endDir.x / endLen, z: endDir.z / endLen };
+  const endLeft = left[n - 1];
+  const endLeftDir = { x: endLeft.x - end.x, z: endLeft.z - end.z };
+
+  const start = line[0];
+  const startNext = line[Math.min(n - 1, 1)];
+  const startDir = { x: start.x - startNext.x, z: start.z - startNext.z };
+  const startLen = Math.hypot(startDir.x, startDir.z) || 1;
+  const startTan = { x: startDir.x / startLen, z: startDir.z / startLen };
+  const startRight = right[0];
+  const startRightDir = { x: startRight.x - start.x, z: startRight.z - start.z };
+
+  const polygon: Pt[] = [...left];
+  const segments = 10;
+  for (let i = 1; i <= segments; i += 1) {
+    const a = (Math.PI * i) / segments;
+    polygon.push({
+      x: end.x + endLeftDir.x * Math.cos(a) + endTan.x * Math.sin(a) * halfWidth,
+      z: end.z + endLeftDir.z * Math.cos(a) + endTan.z * Math.sin(a) * halfWidth,
+    });
+  }
+  for (let i = n - 2; i >= 0; i -= 1) polygon.push(right[i]);
+  for (let i = 1; i <= segments; i += 1) {
+    const a = (Math.PI * i) / segments;
+    polygon.push({
+      x: start.x + startRightDir.x * Math.cos(a) - startTan.x * Math.sin(a) * halfWidth,
+      z: start.z + startRightDir.z * Math.cos(a) - startTan.z * Math.sin(a) * halfWidth,
+    });
+  }
+
+  return polygon;
+}
+
+function pointInPolygon(points: Pt[], x: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
+    const xi = points[i].x;
+    const zi = points[i].z;
+    const xj = points[j].x;
+    const zj = points[j].z;
+    const intersect = zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function distanceToLine(line: Pt[], x: number, z: number): number {
+  let best = Infinity;
+  for (let i = 0; i < line.length - 1; i += 1) {
+    const a = line[i];
+    const b = line[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const lengthSq = abx * abx + abz * abz;
+    let t = lengthSq > 0 ? ((x - a.x) * abx + (z - a.z) * abz) / lengthSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    const dx = x - (a.x + abx * t);
+    const dz = z - (a.z + abz * t);
+    const dist = dx * dx + dz * dz;
+    if (dist < best) best = dist;
+  }
+  return Math.sqrt(best);
+}
+
+function ellipseContains(zone: ZoneSpec, x: number, z: number): boolean {
+  const dx = (x - zone.x) / zone.rx;
+  const dz = (z - zone.z) / zone.rz;
+  return dx * dx + dz * dz <= 1;
+}
+
+function shapeFromPolygon(polygon: Pt[], holes: Pt[][] = []): THREE.Shape {
+  const shape = new THREE.Shape();
+  polygon.forEach((point, index) => {
+    const x = point.x;
+    const y = -point.z;
+    if (index === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  });
+  shape.closePath();
+  for (const hole of holes) {
+    const path = new THREE.Path();
+    hole.forEach((point, index) => {
+      const x = point.x;
+      const y = -point.z;
+      if (index === 0) path.moveTo(x, y);
+      else path.lineTo(x, y);
+    });
+    path.closePath();
+    shape.holes.push(path);
+  }
+  return shape;
+}
+
+function ellipsePoints(zone: ZoneSpec, segments = 56): Pt[] {
+  const points: Pt[] = [];
+  for (let i = 0; i < segments; i += 1) {
+    const a = (i / segments) * Math.PI * 2;
+    points.push({ x: zone.x + Math.cos(a) * zone.rx, z: zone.z + Math.sin(a) * zone.rz });
+  }
+  return points;
+}
+
+function extrudedGround(polygon: Pt[], holes: Pt[][], depth: number): THREE.BufferGeometry {
+  const shape = shapeFromPolygon(polygon, holes);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 4,
     steps: 1,
   });
   geometry.rotateX(-Math.PI / 2);
   geometry.computeVertexNormals();
-  return { geometry, topOffset: -(h - bevel) };
+  return geometry;
 }
 
-interface MoverRuntime {
-  body: CANNON.Body;
-  mesh: THREE.Mesh;
-  spec: MoverSpec;
-  baseX: number;
-  baseZ: number;
-  phase: number;
+function ellipseDisc(rx: number, rz: number, segments = 56): THREE.BufferGeometry {
+  const geometry = new THREE.CircleGeometry(1, segments);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.scale(rx, 1, rz);
+  return geometry;
 }
 
-interface CloudRuntime {
-  obj: THREE.Object3D;
-  baseX: number;
-  phase: number;
-}
-
-/** 한 홀의 3D 비주얼 + 물리 바디 묶음 */
+/** 한 홀의 코스(비주얼 + 지면 질의) */
 export class Course {
   readonly group = new THREE.Group();
   readonly cup = new THREE.Vector3();
   readonly tee = new THREE.Vector3();
-  readonly waterRects: Array<{ x: number; z: number; w: number; d: number }> = [];
+  readonly spec: HoleSpec;
+  readonly obstacles: BallObstacle[] = [];
 
-  private geometries: THREE.BufferGeometry[] = [];
-  private bodies: CANNON.Body[] = [];
-  private movers: MoverRuntime[] = [];
-  private clouds: CloudRuntime[] = [];
+  private readonly islandPoly: Pt[];
+  private readonly fairwayLine: Pt[];
+  private readonly geometries: THREE.BufferGeometry[] = [];
+  private readonly materials: THREE.Material[] = [];
+  private readonly textures: THREE.Texture[] = [];
   private waterSurfaces: THREE.Mesh[] = [];
   private flagCloth: THREE.Mesh | null = null;
+  private flagClothBase: Float32Array | null = null;
   private time = 0;
 
   constructor(
     private scene: THREE.Scene,
-    private world: CANNON.World,
-    private materials: PhysicsMaterials,
-    readonly spec: HoleSpec,
+    readonly hole: HoleSpec,
   ) {
-    this.cup.set(spec.cup[0], 0, spec.cup[1]);
-    this.tee.set(spec.tee[0], 0, spec.tee[1]);
+    this.spec = hole;
+    this.cup.set(hole.cup[0], 0, hole.cup[1]);
+    this.tee.set(hole.tee[0], 0, hole.tee[1]);
+    this.fairwayLine = smoothPath(hole.path);
+    this.islandPoly = corridorPolygon(this.fairwayLine, hole.roughWidth);
     this.build();
     scene.add(this.group);
   }
 
-  private addSlabMesh(w: number, d: number, h: number, radius: number, material: THREE.Material): SlabMesh {
-    const { geometry, topOffset } = makeSlab(w, d, h, radius);
+  // ---------------------------------------------------------------- 지면 질의
+
+  surfaceAt = (x: number, z: number): SurfaceInfo => {
+    for (const zone of this.spec.zones ?? []) {
+      if (zone.kind === 'water' && ellipseContains(zone, x, z)) {
+        return { kind: 'water', height: -0.14 };
+      }
+    }
+    for (const zone of this.spec.zones ?? []) {
+      if (zone.kind === 'bunker' && ellipseContains(zone, x, z)) {
+        return { kind: 'bunker', height: 0.005 };
+      }
+    }
+
+    const green = this.spec.green;
+    const greenDist = Math.hypot(x - green.x, z - green.z);
+    if (greenDist <= green.r) return { kind: 'green', height: 0.01 };
+    if (greenDist <= green.r + 1.5) return { kind: 'fringe', height: 0.005 };
+
+    if (Math.hypot(x - this.tee.x, z - this.tee.z) <= 2.1) return { kind: 'tee', height: 0 };
+    if (distanceToLine(this.fairwayLine, x, z) <= this.spec.fairwayWidth) {
+      return { kind: 'fairway', height: 0 };
+    }
+    if (this.contains(x, z)) return { kind: 'rough', height: 0 };
+    return { kind: 'out', height: APRON_Y };
+  };
+
+  get surfaceFn(): SurfaceFn {
+    return this.surfaceAt;
+  }
+
+  contains(x: number, z: number): boolean {
+    return pointInPolygon(this.islandPoly, x, z);
+  }
+
+  isInWater(x: number, z: number): boolean {
+    return (this.spec.zones ?? []).some((zone) => zone.kind === 'water' && ellipseContains(zone, x, z));
+  }
+
+  /** 가이드/디버그용: 티에서 홀까지 거리 */
+  get length(): number {
+    return Math.hypot(this.cup.x - this.tee.x, this.cup.z - this.tee.z);
+  }
+
+  // ---------------------------------------------------------------- 만들기
+
+  private track<T extends THREE.BufferGeometry>(geometry: T): T {
     this.geometries.push(geometry);
+    return geometry;
+  }
+
+  private material(params: THREE.MeshStandardMaterialParameters): THREE.MeshStandardMaterial {
+    const material = new THREE.MeshStandardMaterial(params);
+    this.materials.push(material);
+    if (material.map) this.textures.push(material.map);
+    return material;
+  }
+
+  private addMesh(geometry: THREE.BufferGeometry, material: THREE.Material, cast = false): THREE.Mesh {
+    this.track(geometry);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.receiveShadow = true;
-    mesh.castShadow = true;
-    return { mesh, topOffset };
+    mesh.castShadow = cast;
+    this.group.add(mesh);
+    return mesh;
   }
 
   private build(): void {
-    const spec = this.spec;
+    const hole = this.spec;
 
-    // 바닥
-    for (const slab of spec.slabs) {
-      const h = slab.h ?? 0.34;
-      const top = slab.y ?? 0;
-      const radius = Math.min(0.18, Math.min(slab.w, slab.d) * 0.3);
-      const material = slab.kind === 'bridge' ? MAT.bridge : MAT.fairway;
-      const { mesh, topOffset } = this.addSlabMesh(slab.w, slab.d, h, radius, material);
-      mesh.position.set(slab.x, top + topOffset, slab.z);
-      this.group.add(mesh);
+    // 주변 지형 (섬 아래로 이어지는 넓은 러프)
+    const apronTexture = roughTexture(0.14);
+    const apronMat = this.material({
+      color: apronTexture ? 0xffffff : FALLBACK.rough,
+      map: apronTexture,
+      roughness: 0.98,
+    });
+    const apronGeo = this.track(new THREE.PlaneGeometry(190, 190, 1, 1));
+    apronGeo.rotateX(-Math.PI / 2);
+    const apron = new THREE.Mesh(apronGeo, apronMat);
+    apron.position.set(hole.green.x, APRON_Y, hole.green.z - 6);
+    apron.receiveShadow = true;
+    this.group.add(apron);
 
-      // 섬 아래 흙 기둥
-      const skirt = this.addSlabMesh(slab.w * 0.94, slab.d * 0.94, 1.2, radius, MAT.skirt);
-      skirt.mesh.position.set(slab.x, top - h + 0.02 + skirt.topOffset, slab.z);
-      skirt.mesh.castShadow = false;
-      this.group.add(skirt.mesh);
+    // 연못은 섬에 구멍을 뚫어 파인 웅덩이로 보이게 한다
+    const waterZones = (hole.zones ?? []).filter((zone) => zone.kind === 'water');
+    const holes = waterZones
+      .map((zone) => ellipsePoints(zone))
+      .filter((points) => points.every((point) => pointInPolygon(this.islandPoly, point.x, point.z)));
 
-      this.bodies.push(makeSlabBody(this.world, this.materials.ground, slab.x, slab.z, slab.w, slab.d, top));
-    }
+    const roughTex = roughTexture(0.2);
+    const islandTop = this.material({
+      color: roughTex ? 0xffffff : FALLBACK.rough,
+      map: roughTex,
+      roughness: 0.97,
+    });
 
-    // 벽(뱅크월)
-    for (const wall of spec.walls) {
-      const h = wall.h ?? 0.6;
-      const thickness = Math.min(wall.w, wall.d);
-      const radius = Math.min(0.1, thickness * 0.45);
-      const { mesh, topOffset } = this.addSlabMesh(wall.w, wall.d, h, radius, MAT.wall);
-      mesh.position.set(wall.x, h + topOffset, wall.z);
-      this.group.add(mesh);
-      this.bodies.push(makeWallBody(this.world, this.materials.wall, wall.x, wall.z, wall.w, h, wall.d, 0));
-    }
+    const islandGeo = extrudedGround(this.islandPoly, holes, ISLAND_DEPTH);
+    const island = new THREE.Mesh(islandGeo, islandTop);
+    island.receiveShadow = true;
+    this.geometries.push(islandGeo);
+    this.group.add(island);
 
-    // 둥근 경사 범프 (반쯤 묻은 구)
-    for (const hump of spec.humps ?? []) {
-      const r = hump.r ?? 2.4;
-      const lift = hump.lift ?? 0.12;
-      const geo = new THREE.SphereGeometry(r, 28, 18);
-      this.geometries.push(geo);
-      const mesh = new THREE.Mesh(geo, MAT.hump);
-      mesh.position.set(hump.x, lift - r, hump.z);
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
+    // 페어웨이 리본 (잔디 스트라이프)
+    const fairTex = fairwayTexture(0.25);
+    const fairwayMat = this.material({
+      color: fairTex ? 0xffffff : FALLBACK.fairway,
+      map: fairTex,
+      roughness: 0.94,
+    });
+    const fairwayGeo = extrudedGround(corridorPolygon(this.fairwayLine, hole.fairwayWidth), [], 0.05);
+    const fairway = new THREE.Mesh(fairwayGeo, fairwayMat);
+    fairway.position.y = 0.006;
+    fairway.receiveShadow = true;
+    this.geometries.push(fairwayGeo);
+    this.group.add(fairway);
 
-      const body = new CANNON.Body({ mass: 0, material: this.materials.ground, shape: new CANNON.Sphere(r) });
-      body.position.set(hump.x, lift - r, hump.z);
-      this.world.addBody(body);
-      this.bodies.push(body);
-    }
+    // 그린 + 프린지
+    const greenTex = greenTexture(0.32);
+    const greenMat = this.material({
+      color: greenTex ? 0xffffff : FALLBACK.green,
+      map: greenTex,
+      roughness: 0.88,
+    });
+    const fringeMat = this.material({ color: 0x6fc355, roughness: 0.95 });
+    const fringe = this.addMesh(ellipseDisc(hole.green.r + 1.55, hole.green.r + 1.55, 64), fringeMat);
+    fringe.position.set(hole.green.x, 0.008, hole.green.z);
+    const greenMesh = this.addMesh(ellipseDisc(hole.green.r, hole.green.r, 64), greenMat);
+    greenMesh.position.set(hole.green.x, 0.014, hole.green.z);
 
-    // 범퍼(돔)
-    for (const bumper of spec.bumpers ?? []) {
-      const r = bumper.r ?? 0.28;
-      const centerY = r - 0.2;
-      const geo = new THREE.SphereGeometry(r, 22, 16);
-      this.geometries.push(geo);
-      const mesh = new THREE.Mesh(geo, MAT.bumper);
-      mesh.position.set(bumper.x, centerY, bumper.z);
-      mesh.castShadow = true;
-      this.group.add(mesh);
-
-      const ringGeo = new THREE.TorusGeometry(r * 1.02, 0.022, 8, 26);
+    // 그린 위 거리 가이드 링
+    const guideMat = this.material({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.28,
+      roughness: 0.7,
+    });
+    [1.4, 2.8, 4.2].forEach((radius) => {
+      if (radius > hole.green.r - 0.4) return;
+      const ringGeo = this.track(new THREE.RingGeometry(radius - 0.035, radius, 64));
       ringGeo.rotateX(-Math.PI / 2);
-      this.geometries.push(ringGeo);
-      const ring = new THREE.Mesh(ringGeo, MAT.bumperRing);
-      ring.position.set(bumper.x, 0.014, bumper.z);
+      const ring = new THREE.Mesh(ringGeo, guideMat);
+      ring.position.set(hole.green.x, 0.02, hole.green.z);
       this.group.add(ring);
+    });
 
-      const body = new CANNON.Body({ mass: 0, material: this.materials.bumper, shape: new CANNON.Sphere(r) });
-      body.position.set(bumper.x, centerY, bumper.z);
-      this.world.addBody(body);
-      this.bodies.push(body);
+    // 벙커
+    const sandTex = sandTexture(0.4);
+    const sandMat = this.material({
+      color: sandTex ? 0xffffff : FALLBACK.sand,
+      map: sandTex,
+      roughness: 1,
+    });
+    const sandRimMat = this.material({ color: 0xb59a6c, roughness: 1 });
+    for (const zone of hole.zones ?? []) {
+      if (zone.kind !== 'bunker') continue;
+      const rim = this.addMesh(ellipseDisc(zone.rx + 0.28, zone.rz + 0.28, 48), sandRimMat);
+      rim.position.set(zone.x, 0.004, zone.z);
+      const sand = this.addMesh(ellipseDisc(zone.rx, zone.rz, 48), sandMat);
+      sand.position.set(zone.x, 0.012, zone.z);
     }
 
-    // 움직이는 장애물
-    for (const mover of spec.movers ?? []) {
-      const { mesh, topOffset } = this.addSlabMesh(mover.w, mover.d, mover.h, 0.06, MAT.mover);
-      mesh.position.set(mover.x, mover.h + topOffset, mover.z);
-      this.group.add(mesh);
+    // 연못
+    const waterTex = waterTexture(0.12);
+    const waterMat = this.material({
+      color: waterTex ? 0xffffff : FALLBACK.water,
+      map: waterTex,
+      roughness: 0.08,
+      metalness: 0.45,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const basinMat = this.material({ color: 0x5d6b52, roughness: 1, side: THREE.DoubleSide });
+    const foamMat = this.material({ color: 0xeaf7ff, roughness: 0.5, transparent: true, opacity: 0.6 });
+    for (const zone of waterZones) {
+      const basinGeo = this.track(new THREE.CylinderGeometry(zone.rx, zone.rx * 0.92, 1.0, 48, 1, true));
+      basinGeo.scale(1, 1, zone.rz / zone.rx);
+      const basin = new THREE.Mesh(basinGeo, basinMat);
+      basin.position.set(zone.x, -0.5, zone.z);
+      basin.receiveShadow = true;
+      this.group.add(basin);
 
-      const stripe = this.addSlabMesh(mover.w * 0.72, mover.d * 0.5, 0.06, 0.03, MAT.bumperRing);
-      stripe.mesh.position.set(0, 0.02 + stripe.topOffset, 0);
-      stripe.mesh.castShadow = false;
-      mesh.add(stripe.mesh);
+      const waterGeo = ellipseDisc(zone.rx * 0.995, zone.rz * 0.995, 56);
+      const water = new THREE.Mesh(this.track(waterGeo), waterMat);
+      water.position.set(zone.x, -0.14, zone.z);
+      this.group.add(water);
+      this.waterSurfaces.push(water);
 
-      const body = new CANNON.Body({
-        mass: 0,
-        type: CANNON.Body.KINEMATIC,
-        material: this.materials.mover,
-        shape: new CANNON.Box(new CANNON.Vec3(mover.w / 2, mover.h / 2, mover.d / 2)),
-      });
-      body.position.set(mover.x, mover.h / 2, mover.z);
-      this.world.addBody(body);
-      this.bodies.push(body);
-      this.movers.push({
-        body,
-        mesh,
-        spec: mover,
-        baseX: mover.x,
-        baseZ: mover.z,
-        phase: mover.phase ?? 0,
-      });
+      const foamGeo = this.track(new THREE.TorusGeometry(1, 0.02, 6, 64));
+      foamGeo.rotateX(-Math.PI / 2);
+      foamGeo.scale(zone.rx, 1, zone.rz);
+      const foam = new THREE.Mesh(foamGeo, foamMat);
+      foam.position.set(zone.x, -0.02, zone.z);
+      this.group.add(foam);
     }
 
-    // 워터 해저드
-    for (const water of spec.water ?? []) {
-      this.waterRects.push({ x: water.x, z: water.z, w: water.w, d: water.d });
-
-      const { mesh, topOffset } = this.addSlabMesh(water.w, water.d, 1.7, 0.2, MAT.water);
-      mesh.position.set(water.x, -0.16 + topOffset, water.z);
-      mesh.receiveShadow = false;
-      mesh.castShadow = false;
-      this.group.add(mesh);
-
-      const surfaceGeo = new THREE.PlaneGeometry(water.w, water.d);
-      surfaceGeo.rotateX(-Math.PI / 2);
-      this.geometries.push(surfaceGeo);
-      const surface = new THREE.Mesh(surfaceGeo, MAT.waterSurface);
-      surface.position.set(water.x, -0.13, water.z);
-      this.group.add(surface);
-      this.waterSurfaces.push(surface);
-
-      // 물가의 흰 거품 라인
-      const foamGeo = new THREE.BoxGeometry(water.w, 0.02, 0.06);
-      this.geometries.push(foamGeo);
-      for (const zEdge of [-1, 1]) {
-        const foam = new THREE.Mesh(foamGeo, MAT.bumperRing);
-        foam.position.set(water.x, -0.1, water.z + (water.d / 2) * zEdge);
-        this.group.add(foam);
-      }
-    }
+    // 티박스
+    const teeMat = this.material({
+      color: 0x9adc75,
+      roughness: 0.9,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    });
+    const teeDisc = this.addMesh(ellipseDisc(2.0, 1.5, 40), teeMat);
+    teeDisc.position.set(hole.tee[0], 0.016, hole.tee[1]);
+    const teeMarkMat = this.material({ color: 0xffffff, roughness: 0.6 });
+    [-0.9, 0.9].forEach((dx) => {
+      const marker = this.addMesh(new THREE.SphereGeometry(0.07, 12, 10), teeMarkMat, true);
+      marker.position.set(hole.tee[0] + dx, 0.05, hole.tee[1] - 0.7);
+    });
 
     // 컵 + 깃발
-    const holeGeo = new THREE.CircleGeometry(0.21, 28);
-    holeGeo.rotateX(-Math.PI / 2);
-    this.geometries.push(holeGeo);
-    const holeMesh = new THREE.Mesh(holeGeo, MAT.cup);
-    holeMesh.position.set(this.cup.x, 0.007, this.cup.z);
-    holeMesh.receiveShadow = true;
-    this.group.add(holeMesh);
-
-    const rimGeo = new THREE.TorusGeometry(0.212, 0.015, 8, 30);
+    const cupMat = this.material({ color: 0x18251f, roughness: 0.95 });
+    const cupDisc = this.addMesh(ellipseDisc(0.19, 0.19, 32), cupMat);
+    cupDisc.position.set(this.cup.x, 0.016, this.cup.z);
+    const rimMat = this.material({ color: 0xf7f3e6, roughness: 0.5 });
+    const rimGeo = this.track(new THREE.TorusGeometry(0.2, 0.014, 8, 32));
     rimGeo.rotateX(-Math.PI / 2);
-    this.geometries.push(rimGeo);
-    const rim = new THREE.Mesh(rimGeo, MAT.teeMark);
-    rim.position.set(this.cup.x, 0.014, this.cup.z);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.position.set(this.cup.x, 0.02, this.cup.z);
     this.group.add(rim);
 
-    const flag = new THREE.Group();
-    const poleGeo = new THREE.CylinderGeometry(0.016, 0.016, 1.15, 8);
-    this.geometries.push(poleGeo);
-    const pole = new THREE.Mesh(poleGeo, MAT.pole);
-    pole.position.y = 0.575;
-    pole.castShadow = true;
-    flag.add(pole);
-
-    const clothGeo = new THREE.PlaneGeometry(0.44, 0.26);
-    clothGeo.translate(0.22, 0, 0);
-    this.geometries.push(clothGeo);
-    const cloth = new THREE.Mesh(clothGeo, MAT.flag);
-    cloth.position.set(0, 1.0, 0);
+    const flagGroup = new THREE.Group();
+    const poleMat = this.material({ color: 0xf8f8f2, roughness: 0.35, metalness: 0.35 });
+    const pole = this.addMesh(new THREE.CylinderGeometry(0.018, 0.018, 1.7, 10), poleMat, true);
+    pole.position.y = 0.85;
+    flagGroup.add(pole);
+    const flagTex = flagTexture();
+    const clothMat = this.material({
+      color: flagTex ? 0xffffff : 0xff5c78,
+      map: flagTex,
+      roughness: 0.72,
+      side: THREE.DoubleSide,
+    });
+    const clothGeo = this.track(new THREE.PlaneGeometry(0.62, 0.38, 10, 4));
+    clothGeo.translate(0.31, 0, 0);
+    const cloth = new THREE.Mesh(clothGeo, clothMat);
+    cloth.position.set(0, 1.44, 0);
     cloth.castShadow = true;
-    flag.add(cloth);
+    flagGroup.add(cloth);
     this.flagCloth = cloth;
+    this.flagClothBase = (clothGeo.getAttribute('position') as THREE.BufferAttribute).array.slice() as Float32Array;
+    flagGroup.position.set(this.cup.x, 0, this.cup.z);
+    this.group.add(flagGroup);
 
-    flag.position.set(this.cup.x, 0, this.cup.z);
-    this.group.add(flag);
-
-    // 티 마커
-    const teeGeo = new THREE.CircleGeometry(0.22, 26);
-    teeGeo.rotateX(-Math.PI / 2);
-    this.geometries.push(teeGeo);
-    const teeMesh = new THREE.Mesh(teeGeo, MAT.teeMark);
-    teeMesh.position.set(this.tee.x, 0.006, this.tee.z);
-    this.group.add(teeMesh);
-
-    // 장식 (나무·바위는 작은 잔디 발판 위에 올려 공중에 뜨지 않게 한다)
-    for (const decor of spec.decor ?? []) {
-      const scale = decor.s ?? 1;
-      if (decor.kind === 'tree' || decor.kind === 'rock') {
-        const padRadius = decor.kind === 'tree' ? 0.62 : 0.46;
-        const pad = this.addSlabMesh(padRadius * 2, padRadius * 2, 0.3, padRadius, MAT.fairway);
-        pad.mesh.position.set(decor.x, pad.topOffset, decor.z);
-        pad.mesh.castShadow = false;
-        this.group.add(pad.mesh);
-
-        const padSkirt = this.addSlabMesh(padRadius * 1.8, padRadius * 1.8, 0.9, padRadius * 0.9, MAT.skirt);
-        padSkirt.mesh.position.set(decor.x, -0.28 + padSkirt.topOffset, decor.z);
-        padSkirt.mesh.castShadow = false;
-        this.group.add(padSkirt.mesh);
-      }
-
-      if (decor.kind === 'tree') {
-        const tree = createTree(scale);
-        tree.position.set(decor.x, decor.y ?? 0, decor.z);
-        this.group.add(tree);
-      } else if (decor.kind === 'rock') {
-        const rock = createRock(scale);
-        rock.position.set(decor.x, decor.y ?? 0, decor.z);
-        this.group.add(rock);
-      } else {
-        const cloud = createCloud(scale);
-        cloud.position.set(decor.x, decor.y ?? 5.5, decor.z);
-        this.group.add(cloud);
-        this.clouds.push({ obj: cloud, baseX: decor.x, phase: Math.random() * Math.PI * 2 });
-      }
+    // 장식
+    for (const decor of hole.decor ?? []) {
+      this.buildDecor(decor);
     }
   }
+
+  private buildDecor(decor: DecorSpec): void {
+    const scale = decor.s ?? 1;
+    const onIsland = this.contains(decor.x, decor.z);
+    const baseY = onIsland ? 0 : APRON_Y;
+
+    const object =
+      decor.kind === 'pine'
+        ? createPine(scale)
+        : decor.kind === 'rock'
+          ? createRock(scale)
+          : decor.kind === 'bush'
+            ? createBush(scale)
+            : createTree(scale);
+
+    object.position.set(decor.x, baseY, decor.z);
+    object.rotation.y = (decor.x * 7.3 + decor.z * 3.1) % Math.PI;
+    if (decor.kind === 'rock') object.position.y = baseY + 0.02;
+    this.group.add(object);
+
+    const radius = decor.r ?? (decor.kind === 'rock' ? 0.5 * scale : 0.5 * scale);
+    if (radius > 0.02) {
+      this.obstacles.push({ x: decor.x, z: decor.z, r: radius });
+    }
+  }
+
+  // ---------------------------------------------------------------- 업데이트
 
   update(dt: number): void {
     this.time += dt;
     const t = this.time;
 
-    // 움직이는 장애물: 목표 위치로 속도를 맞춰 이동 (공에 운동량이 전달된다)
-    for (const mover of this.movers) {
-      const { spec, body } = mover;
-      const offset = Math.sin(t * spec.speed + mover.phase) * spec.range;
-      const targetX = spec.axis === 'x' ? mover.baseX + offset : mover.baseX;
-      const targetZ = spec.axis === 'z' ? mover.baseZ + offset : mover.baseZ;
-      if (dt > 0) {
-        body.velocity.set((targetX - body.position.x) / dt, 0, (targetZ - body.position.z) / dt);
-      }
-      mover.mesh.position.x = body.position.x;
-      mover.mesh.position.z = body.position.z;
-    }
-
-    if (this.flagCloth) {
-      this.flagCloth.rotation.y = Math.sin(t * 2.4) * 0.35;
-      this.flagCloth.scale.x = 0.92 + Math.sin(t * 5.1) * 0.08;
-    }
-
     for (let i = 0; i < this.waterSurfaces.length; i += 1) {
       const surface = this.waterSurfaces[i];
-      surface.position.y = -0.13 + Math.sin(t * 1.7 + i) * 0.012;
-      surface.rotation.z = Math.sin(t * 0.9 + i) * 0.004;
+      surface.position.y = -0.14 + Math.sin(t * 1.5 + i) * 0.008;
+      const material = surface.material as THREE.MeshStandardMaterial;
+      if (material.map) {
+        material.map.offset.x = (t * 0.012) % 1;
+        material.map.offset.y = (t * 0.02) % 1;
+      }
     }
 
-    for (const cloud of this.clouds) {
-      cloud.obj.position.x = cloud.baseX + Math.sin(t * 0.16 + cloud.phase) * 0.9;
-      cloud.obj.position.y += Math.sin(t * 0.7 + cloud.phase) * 0.0006;
+    if (this.flagCloth && this.flagClothBase) {
+      const attribute = this.flagCloth.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const array = attribute.array as Float32Array;
+      for (let i = 0; i < array.length; i += 3) {
+        const baseX = this.flagClothBase[i];
+        const baseY = this.flagClothBase[i + 1];
+        const wave = Math.sin(baseX * 7 + t * 4.2) * 0.045 * (baseX / 0.62);
+        array[i + 2] = this.flagClothBase[i + 2] + wave;
+        array[i + 1] = baseY + Math.sin(baseX * 5 + t * 3.1) * 0.01 * (baseX / 0.62);
+      }
+      attribute.needsUpdate = true;
+      this.flagCloth.geometry.computeVertexNormals();
     }
-  }
-
-  /** 공 위치가 물에 떨어졌는지 */
-  isInWater(x: number, z: number): boolean {
-    return this.waterRects.some(
-      (r) => Math.abs(x - r.x) <= r.w / 2 + 0.02 && Math.abs(z - r.z) <= r.d / 2 + 0.02,
-    );
   }
 
   dispose(): void {
     this.scene.remove(this.group);
-    for (const geometry of this.geometries) {
-      geometry.dispose();
-    }
+    this.geometries.forEach((geometry) => geometry.dispose());
     this.geometries.length = 0;
-    for (const body of this.bodies) {
-      this.world.removeBody(body);
-    }
-    this.bodies.length = 0;
-    this.movers.length = 0;
+    this.materials.forEach((material) => material.dispose());
+    this.materials.length = 0;
+    this.textures.forEach((texture) => texture.dispose());
+    this.textures.length = 0;
     this.waterSurfaces.length = 0;
-    this.clouds.length = 0;
+    this.flagCloth = null;
+    this.flagClothBase = null;
     this.group.clear();
   }
 }
+
+/** 좌표가 그린 위인지 (미리보기용 헬퍼) */

@@ -32,7 +32,7 @@ export type NetMessage =
   | { type: 'state'; player: PlayerSnapshot }
   | { type: 'bye'; id: string }
   | { type: 'emoji'; id: string; emoji: string }
-  | { type: 'shot'; id: string; power: number }
+  | { type: 'shot'; id: string; power: number; club?: string }
   | { type: 'holed'; id: string; hole: number; strokes: number; name: string }
   | { type: 'again'; id: string; name: string }
   // ---- 3D 대기실(로비) ----

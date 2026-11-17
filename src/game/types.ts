@@ -1,69 +1,33 @@
 /** 코스/플레이어/라운드 데이터 타입. */
 
-export type SlabKind = 'fairway' | 'fringe' | 'bridge';
+/** 공이 놓인 지면 종류. 굴림 마찰과 샷 난이도가 달라진다. */
+export type SurfaceKind = 'tee' | 'fairway' | 'rough' | 'green' | 'fringe' | 'bunker' | 'water' | 'out';
 
-export interface SlabSpec {
-  /** 중심 x */
-  x: number;
-  /** 중심 z */
-  z: number;
-  /** x 방향 폭 */
-  w: number;
-  /** z 방향 깊이 */
-  d: number;
-  /** 상면 높이 (기본 0) */
-  y?: number;
-  /** 두께 (기본 0.34) */
-  h?: number;
-  kind?: SlabKind;
+export interface SurfaceInfo {
+  kind: SurfaceKind;
+  /** 지면 높이 (m) */
+  height: number;
 }
 
-export interface WallSpec {
+/** 물·벙커처럼 코스 위에 얹히는 영역 (타원) */
+export interface ZoneSpec {
+  kind: 'water' | 'bunker';
   x: number;
   z: number;
-  w: number;
-  d: number;
-  h?: number;
+  /** x 방향 반지름 */
+  rx: number;
+  /** z 방향 반지름 */
+  rz: number;
 }
 
-export interface BumperSpec {
-  x: number;
-  z: number;
-  r?: number;
-}
-
-export interface HumpSpec {
-  x: number;
-  z: number;
-  r?: number;
-  lift?: number;
-}
-
-export interface MoverSpec {
-  x: number;
-  z: number;
-  w: number;
-  d: number;
-  h: number;
-  axis: 'x' | 'z';
-  range: number;
-  speed: number;
-  phase?: number;
-}
-
-export interface WaterSpec {
-  x: number;
-  z: number;
-  w: number;
-  d: number;
-}
-
+/** 나무·바위 (공이 부딪히는 충돌 반경 포함) */
 export interface DecorSpec {
-  kind: 'tree' | 'rock' | 'cloud';
+  kind: 'tree' | 'rock' | 'pine' | 'bush';
   x: number;
   z: number;
-  y?: number;
   s?: number;
+  /** 공 충돌 반경 (0 이면 충돌 없음) */
+  r?: number;
 }
 
 export interface HoleSpec {
@@ -75,12 +39,16 @@ export interface HoleSpec {
   tee: [number, number];
   /** 컵 위치 [x, z] */
   cup: [number, number];
-  slabs: SlabSpec[];
-  walls: WallSpec[];
-  bumpers?: BumperSpec[];
-  humps?: HumpSpec[];
-  movers?: MoverSpec[];
-  water?: WaterSpec[];
+  /** 페어웨이 중심선 (z 가 큰 쪽 = 티, 작은 쪽 = 그린) */
+  path: Array<[number, number]>;
+  /** 페어웨이 반폭 (m) */
+  fairwayWidth: number;
+  /** 러프 포함 섬 반폭 (m) */
+  roughWidth: number;
+  /** 그린 (원) */
+  green: { x: number; z: number; r: number };
+  /** 물·벙커 */
+  zones?: ZoneSpec[];
   decor?: DecorSpec[];
 }
 

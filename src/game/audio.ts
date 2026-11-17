@@ -115,6 +115,28 @@ export class AudioEngine {
     src.stop(t0 + duration + 0.02);
   }
 
+  /** 클럽별 스윙 사운드 (드라이버는 묵직한 '퍽', 퍼터는 가벼운 '톡') */
+  shot(club: string, power: number): void {
+    const p = Math.min(1, Math.max(0.2, power));
+    if (club === 'putter') {
+      this.putt(power);
+      return;
+    }
+    if (club === 'driver' || club === 'wood') {
+      this.noise(0.16, 0.32 * p, 3000, 320);
+      this.tone(120 + 40 * p, 0.2, 'triangle', 0.22 * p, 58);
+      this.tone(220, 0.08, 'sine', 0.07 * p, 120);
+      return;
+    }
+    if (club === 'iron') {
+      this.noise(0.1, 0.26 * p, 3600, 800);
+      this.tone(300 + 80 * p, 0.1, 'square', 0.07 * p, 170);
+      return;
+    }
+    this.noise(0.11, 0.2 * p, 2800, 600);
+    this.tone(240, 0.12, 'sine', 0.1 * p, 110);
+  }
+
   putt(power: number): void {
     const p = Math.min(1, Math.max(0.15, power));
     this.noise(0.06, 0.16 * p, 2400, 700);

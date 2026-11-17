@@ -38,8 +38,10 @@ async function main(): Promise<void> {
   console.log(`  A가 본 참가자: ${gameA.getPeers().map((p) => p.name).join(', ') || '(없음)'}`);
   console.log(`  B가 본 참가자: ${gameB.getPeers().map((p) => p.name).join(', ') || '(없음)'}`);
 
-  // A가 퍼팅 → B가 A의 위치 변화를 받아야 한다
-  gameA.puttRaw(0, -1, 0.6);
+  // A가 샷 → B가 A의 위치 변화를 받아야 한다
+  const start = gameA.debugState();
+  gameA.debugAimAt(start.cup[0], start.cup[1]);
+  gameA.debugFire(0.6, 0, 'driver' as never);
   for (let i = 0; i < 30; i += 1) {
     gameA.update(1 / 60);
     gameB.update(1 / 60);
@@ -52,13 +54,14 @@ async function main(): Promise<void> {
   gameA.sendEmoji('🔥');
   await sleep(80);
 
-  // A가 홀인하면 B에 알림
-  for (let i = 0; i < 120; i += 1) {
+  // A 상태가 B에 타수와 함께 동기화되는지
+  for (let i = 0; i < 60; i += 1) {
     gameA.update(1 / 60);
     gameB.update(1 / 60);
-    await sleep(8);
-    if (gameB.getPeers().find((p) => p.id === 'player-a')?.strokes !== undefined) break;
+    await sleep(4);
   }
+  const peerA = gameB.getPeers().find((p) => p.id === 'player-a');
+  console.log(`  B가 본 A 타수: ${peerA?.strokes ?? '(없음)'} / A 실제 타수: ${gameA.debugState().strokes}`);
   console.log(`  A 현재 상태: ${JSON.stringify(gameA.debugState().state)}`);
   await sleep(200);
   console.log('검증 완료');

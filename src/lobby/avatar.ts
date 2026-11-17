@@ -159,6 +159,9 @@ export class Golfer {
   private readonly disposables: Array<{ dispose: () => void }> = [];
   private phase = Math.random() * Math.PI * 2;
   private clock = Math.random() * 10;
+  private addressing = false;
+  private swingTime = -1;
+  private swingDuration = 0.92;
 
   constructor(options: GolferOptions) {
     const base = new THREE.Color(options.color);
@@ -319,20 +322,91 @@ export class Golfer {
     this.group.visible = visible;
   }
 
+  /** 어드레스 자세 (공 옆에 서서 채를 겨누는 자세) */
+  setAddressing(on: boolean): void {
+    this.addressing = on;
+  }
+
+  /** 백스윙 → 다운스윙 → 팔로우스루 스윙 모션 재생 */
+  playSwing(duration = 0.92): void {
+    this.swingDuration = Math.max(0.35, duration);
+    this.swingTime = 0;
+  }
+
+  get isSwinging(): boolean {
+    return this.swingTime >= 0;
+  }
+
+  /** 손목/허리 각도 (0~1 진행도) */
+  private swingPose(t: number): { arm: number; torso: number; lean: number } {
+    type Key = { t: number; arm: number; torso: number; lean: number };
+    const keys: Key[] = [
+      { t: 0, arm: -0.26, torso: 0, lean: 0 },
+      { t: 0.42, arm: -1.85, torso: -0.36, lean: -0.06 },
+      { t: 0.62, arm: 0.5, torso: 0.18, lean: 0.04 },
+      { t: 0.78, arm: 1.35, torso: 0.34, lean: 0.08 },
+      { t: 1, arm: -0.26, torso: 0, lean: 0 },
+    ];
+    for (let i = 0; i < keys.length - 1; i += 1) {
+      const a = keys[i];
+      const b = keys[i + 1];
+      if (t <= b.t) {
+        const raw = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+        const k = raw * raw * (3 - 2 * raw);
+        return {
+          arm: a.arm + (b.arm - a.arm) * k,
+          torso: a.torso + (b.torso - a.torso) * k,
+          lean: a.lean + (b.lean - a.lean) * k,
+        };
+      }
+    }
+    return { arm: -0.26, torso: 0, lean: 0 };
+  }
+
   update(dt: number, moving: boolean): void {
     this.clock += dt;
-    if (moving) this.phase += dt * 9.6;
 
-    const swing = moving ? Math.sin(this.phase) : 0;
-    this.root.position.y = moving
-      ? Math.abs(Math.sin(this.phase)) * 0.05
-      : Math.sin(this.clock * 2.1) * 0.008;
-    this.armL.rotation.x = swing * 0.5;
-    if (!this.holdsClub) this.armR.rotation.x = -swing * 0.4;
-    this.footL.position.z = 0.03 + swing * 0.085;
-    this.footR.position.z = 0.03 - swing * 0.085;
-    this.footL.position.y = 0.075 + Math.max(0, swing) * 0.04;
-    this.footR.position.y = 0.075 + Math.max(0, -swing) * 0.04;
+    // 스윙 모션
+    if (this.swingTime >= 0) {
+      this.swingTime += dt;
+      const t = Math.min(1, this.swingTime / this.swingDuration);
+      const pose = this.swingPose(t);
+      this.armR.rotation.x = pose.arm;
+      this.armL.rotation.x = pose.arm * 0.82;
+      this.root.rotation.y = pose.torso;
+      this.root.rotation.z = pose.lean;
+      this.root.position.y = -pose.lean * 0.12;
+      this.footL.position.z = 0.03 + pose.lean * 0.2;
+      this.footR.position.z = 0.03 - pose.lean * 0.2;
+      this.footL.position.y = 0.075;
+      this.footR.position.y = 0.075;
+      if (t >= 1) {
+        this.swingTime = -1;
+        this.root.rotation.y = 0;
+        this.root.rotation.z = 0;
+        this.root.position.y = 0;
+        this.armR.rotation.x = this.holdsClub ? -0.26 : 0;
+      }
+    } else if (this.addressing && this.holdsClub) {
+      // 어드레스: 채를 살짝 앞으로 겨누고 상체를 숙인다
+      const breathe = Math.sin(this.clock * 1.6) * 0.02;
+      this.armR.rotation.x = -0.42 + breathe;
+      this.armL.rotation.x = -0.3 + breathe;
+      this.root.rotation.y = 0;
+    } else {
+      if (moving) this.phase += dt * 9.6;
+      const swing = moving ? Math.sin(this.phase) : 0;
+      this.root.position.y = moving
+        ? Math.abs(Math.sin(this.phase)) * 0.05
+        : Math.sin(this.clock * 2.1) * 0.008;
+      this.armL.rotation.x = swing * 0.5;
+      if (!this.holdsClub) this.armR.rotation.x = -swing * 0.4;
+      else this.armR.rotation.x = -0.26;
+      this.footL.position.z = 0.03 + swing * 0.085;
+      this.footR.position.z = 0.03 - swing * 0.085;
+      this.footL.position.y = 0.075 + Math.max(0, swing) * 0.04;
+      this.footR.position.y = 0.075 + Math.max(0, -swing) * 0.04;
+    }
 
     if (this.ring) {
       const pulse = 1 + Math.sin(this.clock * 2.6) * 0.07;

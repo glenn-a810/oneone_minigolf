@@ -4,6 +4,7 @@ import type { PlayerIdentity } from '../game/types';
 import type { LobbySnapshot, NetMessage, Realtime } from '../net/realtime';
 import { BALL_COLORS, LOBBY_EMOJIS } from '../game/constants';
 import { createCloud, createRock, createTree } from '../game/scenery';
+import { roughTexture, stoneTexture, waterTexture, woodTexture } from '../game/textures';
 import { Golfer, createLabelSprite, emojiBubbleSprite } from './avatar';
 
 /**
@@ -153,6 +154,7 @@ export class Lobby {
   private time = 0;
   private netTimer = 0;
   private previewAngle = 0.55;
+  private pondWater: THREE.Mesh | null = null;
   private enterCooldown = 0;
   private nearGate = false;
   private cameraSnap = true;
@@ -302,16 +304,27 @@ export class Lobby {
   private buildPlaza(): void {
     const rand = seeded(20261117);
 
-    const grass = this.track(new THREE.MeshStandardMaterial({ color: 0x8bdc72, roughness: 0.97 }));
+    const grassTex = roughTexture(5);
+    const stoneTex = stoneTexture(7);
+    const woodTex = woodTexture(1);
+    const grass = this.track(
+      new THREE.MeshStandardMaterial({ color: grassTex ? 0xffffff : 0x8bdc72, map: grassTex, roughness: 0.97 }),
+    );
     const grassDark = this.track(new THREE.MeshStandardMaterial({ color: 0x74c95f, roughness: 0.98 }));
-    const stone = this.track(new THREE.MeshStandardMaterial({ color: 0xf0e7d4, roughness: 0.9 }));
+    const stone = this.track(
+      new THREE.MeshStandardMaterial({ color: stoneTex ? 0xffffff : 0xf0e7d4, map: stoneTex, roughness: 0.9 }),
+    );
     const stoneDeep = this.track(new THREE.MeshStandardMaterial({ color: 0xd8c9ac, roughness: 0.92 }));
-    const wood = this.track(new THREE.MeshStandardMaterial({ color: 0xbf8b5c, roughness: 0.85 }));
+    const wood = this.track(
+      new THREE.MeshStandardMaterial({ color: woodTex ? 0xffffff : 0xbf8b5c, map: woodTex, roughness: 0.85 }),
+    );
     const woodDark = this.track(new THREE.MeshStandardMaterial({ color: 0x8a623f, roughness: 0.9 }));
     const hedgeMat = this.track(new THREE.MeshStandardMaterial({ color: 0x4d9c4a, roughness: 0.95, flatShading: true }));
+    const waterTex = waterTexture(1.6);
     const waterMat = this.track(
       new THREE.MeshStandardMaterial({
-        color: 0x33b3e6,
+        color: waterTex ? 0xffffff : 0x33b3e6,
+        map: waterTex,
         roughness: 0.12,
         metalness: 0.25,
         transparent: true,
@@ -386,6 +399,7 @@ export class Lobby {
     pond.rotation.x = -Math.PI / 2;
     pond.position.set(7.8, 0.018, -3.4);
     this.plaza.add(pond);
+    this.pondWater = pond;
 
     const pondRim = this.mesh(new THREE.TorusGeometry(2.72, 0.16, 10, 48), stoneDeep, false, true);
     pondRim.rotation.x = -Math.PI / 2;
@@ -872,6 +886,13 @@ export class Lobby {
   // ---------------------------------------------------------------- 업데이트
 
   update(dt: number): void {
+    if (this.pondWater) {
+      const material = this.pondWater.material as THREE.MeshStandardMaterial;
+      if (material.map) {
+        material.map.offset.x = (material.map.offset.x + dt * 0.012) % 1;
+        material.map.offset.y = (material.map.offset.y + dt * 0.02) % 1;
+      }
+    }
     const step = Math.min(dt, 0.05);
     this.time += step;
 

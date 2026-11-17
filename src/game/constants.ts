@@ -1,20 +1,29 @@
-/** 게임 전역 상수 — 물리/조작감 튜닝 값은 여기서 한 번에 조정한다. */
+/** 게임 전역 상수 — 물리/조작감 튜닝 값은 여기서 한 번에 고친다. */
 
-export const BALL_RADIUS = 0.13;
+/** 공 반지름 (m). 실제 골프공보다 조금 크게 잡아 화면에서 잘 보이게 한다. */
+export const BALL_RADIUS = 0.09;
 /** 컵 판정 반경 (공 중심 기준, m) */
-export const CUP_RADIUS = 0.27;
+export const CUP_RADIUS = 0.16;
 /** 컵 근처에서 공이 살짝 빨려 들어가는 반경 */
-export const CUP_ATTRACT_RADIUS = 0.82;
+export const CUP_ATTRACT_RADIUS = 0.62;
 
-/** 최대 파워 속도 (m/s) */
-export const MAX_SHOT_SPEED = 11;
-/** 최소 파워 속도 (m/s) */
-export const MIN_SHOT_SPEED = 0.8;
-/** 슬링샷 최대 드래그 거리 (px) */
-export const AIM_MAX_DRAG_PX = 160;
+/** 중력 (m/s²) */
+export const GRAVITY = 9.81;
+/** 공기 저항 계수 (a = -k·|v|·v) */
+export const AIR_DRAG = 0.0042;
+/** 바람 (m/s², 아주 약하게) */
+export const WIND = { x: 0.35, z: -0.22 };
+
+/** 파워 0 일 때 속도 비율 */
+export const MIN_POWER_RATIO = 0.18;
 
 /** 홀당 최대 타수 = Par + 이 값 */
-export const STROKE_LIMIT_EXTRA = 4;
+export const STROKE_LIMIT_EXTRA = 5;
+
+/** 스윙 게이지: 0 → 100% 까지 걸리는 시간(초) */
+export const GAUGE_POWER_SECONDS = 1.25;
+/** 임팩트 존까지 되돌아오는 시간(초) */
+export const GAUGE_IMPACT_SECONDS = 1.0;
 
 export const BALL_COLORS = [
   { name: '코랄', hex: '#ff7a59' },

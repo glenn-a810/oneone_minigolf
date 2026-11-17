@@ -9,7 +9,7 @@
     <meta name="theme-color" content="#bfe6ff" />
     <meta
       name="description"
-      content="원온 미니골프 — 3D 대기실에서 이모지로 인사하고, 플레이룸에서 3홀 미니골프를 즐겨요. 로그인 없이 닉네임만 정하면 끝."
+      content="원온 미니골프 — 3D 대기실에서 이모지로 인사하고, 플레이룸에서 타이밍 스윙으로 3홀 라운드를 즐겨요. 로그인 없이 닉네임만 정하면 끝."
     />
     <title>원온 미니골프 · ONEOINE CLUBHOUSE</title>
   </head>
@@ -23,9 +23,9 @@
           <div class="hole-card">
             <div class="hole-card-head">
               <span id="hole-no">1홀</span>
-              <span id="hole-par" class="par">Par 2</span>
+              <span id="hole-par" class="par">Par 4</span>
             </div>
-            <p id="hole-name" class="hole-name">스타트 라인</p>
+            <p id="hole-name" class="hole-name">퍼스트 드라이브</p>
             <p id="hole-hint" class="hole-hint"></p>
             <p class="hole-dist"><span id="hole-dist">0.0</span>m 남음</p>
           </div>
@@ -47,16 +47,49 @@
         <div id="players" class="players"></div>
 
         <div class="hud-bottom">
-          <div class="aim-panel">
-            <div class="stroke-box">
-              <span id="stroke-count">0</span>
-              <small>타</small>
+          <div class="shot-panel">
+            <div class="shot-head">
+              <div class="stroke-box">
+                <span id="stroke-count">0</span>
+                <small>타</small>
+              </div>
+              <div class="shot-meta">
+                <span id="shot-dist" class="shot-dist">0m</span>
+                <span id="shot-lie" class="lie-tag">페어웨이</span>
+                <span id="shot-club" class="club-tag">드라이버</span>
+              </div>
             </div>
-            <div class="power-wrap">
-              <div class="power-track"><div id="power-fill" class="power-fill"></div></div>
-              <p id="power-hint" class="power-hint">공을 뒤로 당겨 퍼팅</p>
+
+            <div id="gauge" class="gauge" role="meter" aria-label="스윙 파워/임팩트 게이지">
+              <div class="gauge-bands">
+                <span class="band good"></span>
+                <span class="band perfect"></span>
+              </div>
+              <div id="gauge-fill" class="gauge-fill"></div>
+              <div id="gauge-power" class="gauge-power"></div>
+              <div id="gauge-marker" class="gauge-marker"></div>
+              <span class="gauge-zone-label">IMPACT</span>
+            </div>
+            <p id="gauge-hint" class="gauge-hint">스윙! 을 눌러 게이지를 시작하세요</p>
+
+            <div id="clubs" class="club-row" role="group" aria-label="클럽 선택">
+              <button type="button" data-club="driver" class="club-chip">드라이버</button>
+              <button type="button" data-club="wood" class="club-chip">우드</button>
+              <button type="button" data-club="iron" class="club-chip">아이언</button>
+              <button type="button" data-club="wedge" class="club-chip">웨지</button>
+              <button type="button" data-club="putter" class="club-chip">퍼터</button>
             </div>
           </div>
+
+          <div class="shot-controls">
+            <button id="btn-aim-left" class="aim-btn" type="button" aria-label="왼쪽으로 조준">◀</button>
+            <button id="btn-swing" class="swing-btn" type="button">
+              <span id="swing-label">스윙!</span>
+              <small id="swing-sub">탭 3번</small>
+            </button>
+            <button id="btn-aim-right" class="aim-btn" type="button" aria-label="오른쪽으로 조준">▶</button>
+          </div>
+
           <div class="emoji-bar" id="emoji-bar">
             <button type="button" data-emoji="👏" aria-label="박수">👏</button>
             <button type="button" data-emoji="🔥" aria-label="불꽃">🔥</button>
@@ -129,7 +162,7 @@
             <div class="brand-text">
               <p class="brand-eyebrow">ONEOINE CLUBHOUSE</p>
               <h1>원온 미니골프</h1>
-              <p>3D 대기실에서 만나고, 플레이룸에서 3홀 라운드</p>
+              <p>3D 대기실에서 만나고, 플레이룸에서 3홀 타이밍 스윙 라운드</p>
             </div>
           </div>
 
@@ -155,8 +188,8 @@
 
           <button id="btn-teeoff" class="primary-btn" type="button">대기실 입장 🚪</button>
           <p class="entry-note">
-            대기실에서 <b>이모지</b>로 인사하고, 광장 끝 <b>플레이룸 게이트</b>로 들어가면 3홀 미니골프가 시작돼요.<br />
-            브라우저 탭을 하나 더 열면 같은 대기실에서 서로 만날 수 있어요.
+            대기실에서 <b>이모지</b>로 인사하고, 광장 끝 <b>플레이룸 게이트</b>로 들어가면 3홀 라운드가 시작돼요.<br />
+            플레이룸에서는 <b>조준 → 파워 → 임팩트</b> 3번의 탭으로 골프 스윙을 합니다.
           </p>
         </div>
       </div>
@@ -203,12 +236,13 @@
           <ul class="help-list">
             <li><b>대기실 이동</b> — <b>WASD</b>·<b>방향키</b>, 바닥을 <b>클릭/탭</b>하면 그쪽으로 걸어가요. 모바일은 화면을 <b>드래그</b>하면 조이스틱이 나타납니다.</li>
             <li><b>이모지</b> — 아래 이모지 바(👋⛳🔥👏😂🎉)를 누르면 내 캐릭터 위에 말풍선이 떠요. 채팅 없이 감정만 주고받아요.</li>
-            <li><b>플레이룸</b> — 광장 끝 <b>빛나는 게이트</b>로 걸어 들어가면 3홀 미니골프가 시작됩니다. 게임 중 🏠 버튼으로 대기실에 돌아올 수 있어요.</li>
-            <li><b>퍼팅</b> — 플레이룸에서 공을 잡고 <b>뒤로 당긴</b> 뒤 놓으면 반대 방향으로 날아가요. 당긴 길이가 파워!</li>
-            <li><b>카메라(게임)</b> — 마우스 오른쪽 드래그, 게임 중 <b>A · D</b>. <b>M</b> 소리, <b>R</b> 공 되돌리기(+1벌타).</li>
+            <li><b>플레이룸</b> — 광장 끝 <b>빛나는 게이트</b>로 걸어 들어가면 3홀 라운드가 시작됩니다. 게임 중 🏠 버튼으로 대기실에 돌아올 수 있어요.</li>
+            <li><b>조준</b> — <b>◀ ▶</b> 버튼·<b>A/D</b>·화면 좌우 드래그로 방향을 돌립니다. 바닥의 <b>점선 궤적</b>이 예상 탄도와 착지점을 보여줘요.</li>
+            <li><b>타이밍 스윙(3탭)</b> — <b>스윙!</b> → 게이지가 차오르면 원하는 파워에서 <b>파워!</b> → 게이지가 왼쪽 <b>임팩트 존</b>으로 돌아올 때 <b>임팩트!</b>. 존 한가운데를 맞추면 Perfect, 어긋나면 훅/슬라이스가 납니다. <b>스페이스바</b>로도 칩니다.</li>
+            <li><b>클럽</b> — 거리·지형에 맞는 클럽이 자동 선택되고, 아래 버튼으로 직접 바꿀 수 있어요. 그린에서는 <b>퍼터</b>로 굴립니다. 러프·벙커에서는 비거리가 줄어요.</li>
             <li><b>함께하기</b> — 같은 브라우저에서 탭을 여러 개 열면 대기실 위치·이모지·플레이룸 이동이 실시간으로 동기화돼요.</li>
           </ul>
-          <p class="help-note">혼자 접속해도 로비 게스트들이 광장을 거닐며 이모지로 반응해요. 워터 해저드에 빠지면 마지막 샷 위치로 돌아가고 1벌타가 붙습니다.</p>
+          <p class="help-note">워터 해저드에 빠지면 마지막 샷 위치로 돌아가고 1벌타가 붙습니다. <b>R</b> 공 되돌리기(+1벌타), <b>M</b> 소리, <b>H</b> 도움말.</p>
           <button id="btn-help-close" class="primary-btn" type="button">알겠어요</button>
         </div>
       </div>
