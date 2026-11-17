@@ -23,7 +23,7 @@ export const HOLES: HoleSpec[] = [
       [1.5, -30],
     ],
     fairwayWidth: 6.4,
-    roughWidth: 11.2,
+    roughWidth: 14,
     green: { x: 1.5, z: -30, r: 7 },
     zones: [{ kind: 'bunker', x: 8.6, z: -26.5, rx: 3.4, rz: 2.9 }],
     decor: [
@@ -60,7 +60,7 @@ export const HOLES: HoleSpec[] = [
       [0, -30],
     ],
     fairwayWidth: 6.2,
-    roughWidth: 12,
+    roughWidth: 14,
     green: { x: 0, z: -30, r: 7.2 },
     zones: [
       { kind: 'water', x: -12.5, z: -3, rx: 6.4, rz: 7.4 },

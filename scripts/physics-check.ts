@@ -233,6 +233,26 @@ function stepGame(maxFrames: number): void {
   }
 }
 
+console.log('\n— 풀파워 드라이브가 섬 밖으로 나가지 않는다 —');
+{
+  // 1홀 티에서 1W 풀파워: 그린 뒤편 러프에서 멈추고 OB 벌타가 없어야 한다
+  const mark = events.length;
+  game.restart();
+  const tee = game.debugState();
+  game.debugAimAt(tee.cup[0], tee.cup[1]);
+  game.debugFire(1, 0, '1W');
+  for (let i = 0; i < 3000; i += 1) {
+    const state = game.debugState().state;
+    if (state === 'ready' || state === 'finished' || state === 'between') break;
+    game.update(dt);
+  }
+  const after = game.debugState();
+  const penalized = events.slice(mark).some((line) => line.includes('PENALTY'));
+  check('1타로 벌타 없이 착지', after.strokes === 1 && !penalized, `strokes ${after.strokes}${penalized ? ' · 벌타 발생' : ''}`);
+  check('컴 근처(15m 이내)에 머문다', after.distance <= 15, `${after.distance.toFixed(1)}m`);
+  game.restart();
+}
+
 console.log('\n— 샷 후 골퍼는 제자리, 공만 날아간다 —');
 {
   game.debugAimAt(game.debugState().cup[0], game.debugState().cup[1]);
