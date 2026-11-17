@@ -846,6 +846,13 @@ export class Lobby {
     );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, this.camera);
+
+    // 게이트(기둥·링·포탈·표지판)를 직접 눌렀으면 게이트 안으로 걸어 들어간다
+    if (raycaster.intersectObject(this.gateGroup, true).length > 0) {
+      this.target = new THREE.Vector3(GATE.x, 0, GATE.z + 1);
+      return;
+    }
+
     const point = new THREE.Vector3();
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     if (!raycaster.ray.intersectPlane(plane, point)) return;
@@ -855,9 +862,9 @@ export class Lobby {
       point.x *= BOUND / radius;
       point.z *= BOUND / radius;
     }
-    // 게이트를 눌렀으면 게이트 바로 앞으로 걸어간다
+    // 게이트 근처 바닥을 눌렀으면 게이트 앞으로 걸어간다
     if (Math.hypot(point.x - GATE.x, point.z - GATE.z) < 3.2) {
-      point.set(GATE.x, 0, GATE.z + 1.9);
+      point.set(GATE.x, 0, GATE.z + 1);
     }
     this.target = point;
   }
