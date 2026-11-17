@@ -115,10 +115,10 @@ game.join({ id: 'swing-tester', name: '스윙', color: '#ff7a59' });
 
 function shoot(power: number, error: number): { x: number; z: number; strokes: number } {
   game.restart();
-  game.setClub('driver');
+  game.setClub('1W');
   const start = game.debugState();
   game.debugAimAt(start.pos[0], start.pos[2] - 100); // 정면(-z) 조준
-  game.debugFire(power, error, 'driver');
+  game.debugFire(power, error, '1W');
   for (let i = 0; i < 3000; i += 1) {
     game.update(1 / 60);
     if (game.debugState().state === 'ready') break;

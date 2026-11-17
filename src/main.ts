@@ -1,6 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
-import { Game, verdictLabel, type BannerTone, type GaugeView } from './game/game';
+import { Game, verdictLabel, VIEW_LABEL, type BannerTone, type GaugeView, type ViewMode } from './game/game';
 import type { HoleSpec, PlayerIdentity, PlayerSnapshot, RoundResult, SurfaceKind } from './game/types';
 import { BALL_COLORS, EMOJIS, randomNickname } from './game/constants';
 import { HOLES } from './game/courses';
@@ -127,8 +127,15 @@ const gateButton = $button('btn-gate');
 const gaugeEl = $('gauge');
 const gaugeFill = $('gauge-fill');
 const gaugeMarker = $('gauge-marker');
+const gaugeTarget = $('gauge-target');
 const gaugePower = $('gauge-power');
 const gaugeHint = $('gauge-hint');
+const livePower = $('live-power');
+const liveDist = $('live-dist');
+const liveGoal = $('live-goal');
+const rangeTarget = $('range-target');
+const rangeMax = $('range-max');
+const rangeClub = $('range-club');
 const swingButton = $button('btn-swing');
 const swingLabel = $('swing-label');
 const swingSub = $('swing-sub');
@@ -136,6 +143,8 @@ const clubRow = $('clubs');
 const shotDist = $('shot-dist');
 const shotLie = $('shot-lie');
 const shotClub = $('shot-club');
+const viewButton = $button('btn-view');
+const viewLabel = $('view-label');
 const aimLeft = $button('btn-aim-left');
 const aimRight = $button('btn-aim-right');
 
@@ -185,6 +194,25 @@ const gaugePercent = (value: number): number => ((value + 0.25) / 1.25) * 100;
 
 let gaugeLive = false;
 
+const meters = (value: number): string => `${(Math.round(value * 10) / 10).toFixed(1)}m`;
+
+function renderRange(clubId: ClubId, distance: number, clubMax: number): void {
+  const club = getClub(clubId);
+  rangeTarget.textContent = meters(distance);
+  rangeMax.textContent = meters(clubMax);
+  rangeClub.textContent = club.code;
+}
+
+function renderTargetMarker(needed: number, distance: number): void {
+  const short = needed > 1.02;
+  gaugeTarget.style.left = `${gaugePercent(short ? 1 : Math.max(0, needed))}%`;
+  gaugeTarget.classList.toggle('short', short);
+  liveGoal.classList.toggle('short', short);
+  liveGoal.textContent = short
+    ? `🎯 ${meters(distance)} · 클럽 부족`
+    : `🎯 목표 ${Math.round(Math.min(1, Math.max(0, needed)) * 100)}%`;
+}
+
 function renderGauge(view: GaugeView): void {
   const value = Math.max(-0.25, Math.min(1, view.value));
   gaugeMarker.style.left = `${gaugePercent(value)}%`;
@@ -201,6 +229,14 @@ function renderGauge(view: GaugeView): void {
   gaugeEl.classList.toggle('hit', view.phase === 'impact' && Math.abs(view.value) <= 0.105);
 
   gaugeHint.textContent = view.hint;
+
+  // 목표 거리까지 필요한 파워 위치에 핀 마커 + 현재 파워 % · 예상 비거리
+  renderTargetMarker(view.neededPower, view.distance);
+  gaugeTarget.classList.toggle('live', gaugeLive);
+  livePower.textContent = `${view.powerPercent}%`;
+  liveDist.textContent = meters(view.estimate);
+  renderRange(view.club, view.distance, view.clubMax);
+  shotClub.textContent = `${getClub(view.club).code} ${getClub(view.club).name}`;
 
   if (view.phase === 'idle' || view.phase === 'done') {
     swingLabel.textContent = '스윙!';
@@ -229,15 +265,29 @@ function renderClub(clubId: ClubId, recommended: ClubId, distance: number, surfa
     const id = button.dataset.club as ClubId | undefined;
     button.classList.toggle('active', id === clubId);
     button.classList.toggle('recommended', id === recommended && id !== clubId);
+    button.setAttribute('aria-pressed', String(id === clubId));
   });
-  shotClub.textContent = getClub(clubId).name;
+  const club = getClub(clubId);
+  shotClub.textContent = `${club.code} ${club.name}`;
   shotLie.textContent = SURFACE_LABEL[surface];
   shotDist.textContent = `${distance < 10 ? distance.toFixed(1) : Math.round(distance)}m`;
 }
 
+// 번호별 클럽 버튼 (1W · 3W · 5I · 7I · 9I · PW · SW · PT)
 CLUBS.forEach((club) => {
-  const button = clubRow.querySelector<HTMLButtonElement>(`[data-club="${club.id}"]`);
-  button?.setAttribute('title', club.note);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'club-chip';
+  button.dataset.club = club.id;
+  button.title = `${club.name} · ${club.note}`;
+  button.setAttribute('aria-label', `${club.code} ${club.name}`);
+
+  const code = document.createElement('b');
+  code.textContent = club.code;
+  const name = document.createElement('span');
+  name.textContent = club.name.replace('번 아이언', '번').replace('피칭웨지', '피칭').replace('샌드웨지', '샌드');
+  button.append(code, name);
+  clubRow.appendChild(button);
 });
 
 clubRow.addEventListener('click', (event) => {
@@ -248,15 +298,7 @@ clubRow.addEventListener('click', (event) => {
   if (!id) return;
   audio.unlock();
   game.setClub(id);
-  renderActiveClub(id);
 });
-
-function renderActiveClub(id: ClubId): void {
-  clubRow.querySelectorAll<HTMLButtonElement>('.club-chip').forEach((button) => {
-    button.classList.toggle('active', button.dataset.club === id);
-  });
-  shotClub.textContent = getClub(id).name;
-}
 
 function holdAim(button: HTMLButtonElement, delta: number): void {
   let interval = 0;
@@ -317,6 +359,11 @@ const game = new Game({
     onClub: (clubId: ClubId, recommended: ClubId, distance: number, surface: SurfaceKind) => {
       if (mode !== 'game') return;
       renderClub(clubId, recommended, distance, surface);
+    },
+    onView: (mode_: ViewMode) => {
+      viewLabel.textContent = VIEW_LABEL[mode_];
+      viewButton.classList.toggle('target', mode_ === 'target');
+      viewButton.classList.toggle('top', mode_ === 'top');
     },
     onShot: (plan, club) => {
       if (mode !== 'game') return;
@@ -385,7 +432,8 @@ focusSun(HOLES[0]);
 
 const input = new InputController(canvas, game, {
   onToggleMute: () => toggleMute(),
-  onToggleHelp: () => help.classList.toggle('hidden'),
+  onToggleHelp: () => openOnboarding(),
+  onToggleView: () => cycleView(),
   isActive: () => mode === 'game',
 });
 
@@ -466,8 +514,21 @@ function enterPlayroom(): void {
     mode = 'game';
     game.join(me);
     lobby.setMode('idle');
-    renderGauge({ phase: 'idle', value: 0, power: 0, hint: '스윙! 을 눌러 게이지를 시작하세요' });
+    renderGauge({
+      phase: 'idle',
+      value: 0,
+      power: 0,
+      hint: '스윙! 을 눌러 게이지를 시작하세요',
+      club: game.currentClub.id,
+      distance: game.cupDistance(),
+      clubMax: game.clubMax,
+      powerPercent: 0,
+      estimate: 0,
+      neededPower: game.neededPower,
+    });
     showBanner('플레이룸 입장', '3홀 · 조준하고 3번 탭으로 스윙!', 'plain');
+    // 첫 입장(또는 ? 버튼)에서만 3단계 가이드를 보여준다
+    if (!onboardingSeen()) openOnboarding();
   });
 }
 
@@ -516,15 +577,95 @@ soundButton.addEventListener('click', toggleMute);
 lobbySoundButton.addEventListener('click', toggleMute);
 syncSoundButton();
 
+function cycleView(): void {
+  if (mode !== 'game') return;
+  audio.unlock();
+  const next = game.cycleView();
+  showToast(`🔭 ${VIEW_LABEL[next]}${next === 'back' ? '' : next === 'target' ? ' · 착지 지점 보기' : ' · 코스 전체 보기'}`);
+}
+
+viewButton.addEventListener('click', cycleView);
+
 $button('btn-help').addEventListener('click', () => {
   audio.unlock();
-  help.classList.remove('hidden');
+  openOnboarding();
 });
 $button('btn-lobby-help').addEventListener('click', () => {
   audio.unlock();
   help.classList.remove('hidden');
 });
 $button('btn-help-close').addEventListener('click', () => help.classList.add('hidden'));
+
+// ---------------------------------------------------------------- 첫 입장 가이드
+
+const ONBOARDING_KEY = 'oneone:onboarding:v2';
+const onboarding = $('onboarding');
+const onbSteps = Array.from(onboarding.querySelectorAll<HTMLElement>('.onb-step'));
+const onbDots = Array.from($('onb-dots').querySelectorAll<HTMLElement>('i'));
+const onbBack = $button('btn-onb-back');
+const onbNext = $button('btn-onb-next');
+let onbStep = 0;
+
+function onboardingSeen(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markOnboardingSeen(): void {
+  try {
+    localStorage.setItem(ONBOARDING_KEY, '1');
+  } catch {
+    /* 저장 실패는 무시 (매번 다시 보여줄 뿐) */
+  }
+}
+
+function renderOnbStep(): void {
+  onbSteps.forEach((step, index) => step.classList.toggle('active', index === onbStep));
+  onbDots.forEach((dot, index) => dot.classList.toggle('on', index === onbStep));
+  onbBack.disabled = onbStep === 0;
+  onbBack.style.visibility = onbStep === 0 ? 'hidden' : 'visible';
+  onbNext.textContent = onbStep === onbSteps.length - 1 ? '스윙 시작!' : '다음';
+}
+
+function openOnboarding(): void {
+  onbStep = 0;
+  renderOnbStep();
+  onboarding.classList.remove('hidden');
+}
+
+function closeOnboarding(): void {
+  onboarding.classList.add('hidden');
+  markOnboardingSeen();
+}
+
+onbBack.addEventListener('click', () => {
+  if (onbStep === 0) return;
+  onbStep -= 1;
+  audio.ui();
+  renderOnbStep();
+});
+
+onbNext.addEventListener('click', () => {
+  audio.unlock();
+  audio.ui();
+  if (onbStep >= onbSteps.length - 1) {
+    closeOnboarding();
+    return;
+  }
+  onbStep += 1;
+  renderOnbStep();
+});
+
+$button('btn-onb-skip').addEventListener('click', closeOnboarding);
+$button('btn-onb-help').addEventListener('click', () => {
+  closeOnboarding();
+  help.classList.remove('hidden');
+});
+
+renderOnbStep();
 
 document.querySelectorAll<HTMLButtonElement>('[data-emoji]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -756,6 +897,10 @@ window.setInterval(() => {
   $('hole-dist').textContent = distance < 10 ? distance.toFixed(1) : String(Math.round(distance));
   $('stroke-count').textContent = String(game.currentStrokes);
   shotLie.textContent = SURFACE_LABEL[game.surface];
+  renderRange(game.currentClub.id, distance, game.clubMax);
+  livePower.textContent = '0%';
+  liveDist.textContent = meters(0);
+  renderTargetMarker(game.neededPower, distance);
 }, 200);
 
 window.addEventListener('beforeunload', () => input.dispose());

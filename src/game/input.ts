@@ -3,6 +3,8 @@ import type { Game } from './game';
 interface InputHooks {
   onToggleMute?: () => void;
   onToggleHelp?: () => void;
+  /** 카메라 뷰 전환 (백뷰 → 타겟뷰 → 탑뷰) */
+  onToggleView?: () => void;
   /** false 면 입력을 무시한다 (대기실에서는 게임 조작이 꺼진다) */
   isActive?: () => boolean;
 }
@@ -13,7 +15,7 @@ interface InputHooks {
  * - 화면 좌우 드래그: 조준 회전
  * - ←/→ 또는 A/D: 조준 미세 회전
  * - 스페이스/엔터: 스윙 게이지 탭 (시작 → 파워 → 임팩트)
- * - R: 공 되돌리기(+1벌타) · M: 소리 · H: 도움말
+ * - R: 공 되돌리기(+1벌타) · M: 소리 · H: 도움말 · V: 뷰 전환
  */
 export class InputController {
   constructor(
@@ -76,6 +78,9 @@ export class InputController {
         break;
       case 'm':
         this.hooks.onToggleMute?.();
+        break;
+      case 'v':
+        this.hooks.onToggleView?.();
         break;
       case 'h':
       case '?':

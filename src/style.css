@@ -190,6 +190,39 @@ body {
   opacity: 0.5;
 }
 
+/* 뷰 전환 (🔭 + 현재 시점) */
+.view-btn {
+  width: auto;
+  min-width: 38px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.view-btn span {
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--ink-soft);
+}
+
+.view-btn.target {
+  background: rgba(204, 240, 255, 0.96);
+}
+
+.view-btn.top {
+  background: rgba(233, 255, 222, 0.96);
+}
+
+.view-btn.target span,
+.view-btn.top span {
+  color: var(--ink);
+}
+
 /* 참가자 목록 */
 .players {
   margin: 10px 0 auto;
@@ -690,6 +723,149 @@ body {
   min-height: 14px;
 }
 
+/* ---------- 첫 입장 가이드 ---------- */
+.onb-card {
+  width: min(92vw, 430px);
+  padding: 22px 22px 18px;
+}
+
+.onb-head h2 {
+  margin: 3px 0 6px;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.onb-sub {
+  margin: 0 0 14px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.onb-step {
+  display: none;
+  gap: 10px;
+}
+
+.onb-step.active {
+  display: flex;
+  animation: onb-in 0.24s ease both;
+}
+
+@keyframes onb-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.onb-badge {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ff9a7a, #f2683f);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.onb-title {
+  margin: 0 0 5px;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.onb-text {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.onb-text b {
+  color: var(--ink);
+}
+
+.onb-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #2f9e44;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  vertical-align: 1px;
+}
+
+.onb-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.onb-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.onb-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(22, 50, 59, 0.18);
+  transition: width 0.18s ease, background 0.18s ease;
+}
+
+.onb-dots i.on {
+  width: 16px;
+  border-radius: 999px;
+  background: var(--coral);
+}
+
+.onb-btns {
+  display: flex;
+  gap: 7px;
+}
+
+.onb-btns .primary-btn,
+.onb-btns .ghost-btn {
+  width: auto;
+  padding: 10px 16px;
+  font-size: 13px;
+  border-radius: 12px;
+}
+
+.onb-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.link-btn {
+  border: 0;
+  padding: 2px;
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ---------- 도움말 ---------- */
 .help-card h2 {
   margin: 0 0 14px;
@@ -944,6 +1120,30 @@ body {
   color: var(--coral-deep);
 }
 
+/* 남은 거리 · 클럽 최대 비거리 */
+.shot-range {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.shot-range b {
+  color: var(--ink);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.shot-range em {
+  font-style: normal;
+  font-weight: 900;
+  color: var(--coral-deep);
+}
+
 .gauge {
   position: relative;
   height: 20px;
@@ -1022,6 +1222,83 @@ body {
   box-shadow: 0 0 0 2px rgba(255, 122, 89, 0.55), 0 0 16px rgba(255, 209, 102, 0.95);
 }
 
+/* 핀까지 필요한 파워 위치 표시 */
+.gauge-target {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  margin-left: -1px;
+  opacity: 0.62;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.gauge-target::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #1f7a33;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+}
+
+.gauge-target i {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px 2px 2px 0;
+  background: #1f7a33;
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px rgba(31, 122, 51, 0.75);
+}
+
+.gauge-target.live {
+  opacity: 1;
+}
+
+.gauge-target.short::before,
+.gauge-target.short i {
+  background: #d1495b;
+}
+
+.gauge-live {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: -2px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gauge-live .live-power b {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.gauge-live .sep {
+  margin: 0 4px;
+  color: rgba(22, 50, 59, 0.3);
+}
+
+.gauge-live .live-goal {
+  color: #1f7a33;
+  font-weight: 900;
+}
+
+.gauge-live .live-goal.short {
+  color: #d1495b;
+}
+
 .gauge-hint {
   margin: 0;
   min-height: 13px;
@@ -1048,8 +1325,11 @@ body {
 .club-chip {
   position: relative;
   flex: 0 0 auto;
-  padding: 6px 11px;
-  border-radius: 999px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(22, 50, 59, 0.12);
   background: #ffffff;
   font-family: inherit;
@@ -1058,6 +1338,18 @@ body {
   color: var(--ink-soft);
   cursor: pointer;
   transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.club-chip b {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.club-chip span {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.72;
 }
 
 .club-chip:active {

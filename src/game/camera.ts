@@ -40,7 +40,7 @@ export class CameraRig {
   }
 
   setPitch(pitch: number): void {
-    this.targetPitch = THREE.MathUtils.clamp(pitch, 0.08, 0.95);
+    this.targetPitch = THREE.MathUtils.clamp(pitch, 0.08, 1.4);
   }
 
   nudgePitch(delta: number): void {

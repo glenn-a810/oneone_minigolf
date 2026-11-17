@@ -9,18 +9,40 @@ import { createBall } from './scenery';
 import { Golfer } from '../lobby/avatar';
 import { BALL_RADIUS, MIN_POWER_RATIO, STROKE_LIMIT_EXTRA } from './constants';
 import { GolfBall, previewShot, type TrajectoryPreview } from './ball';
-import { getClub, liePenalty, recommendClub, type Club, type ClubId } from './clubs';
+import {
+  clubMaxDistance,
+  estimateDistance,
+  getClub,
+  liePenalty,
+  powerForDistance,
+  recommendClub,
+  type Club,
+  type ClubId,
+} from './clubs';
 import { SwingMeter, type ShotPlan } from './swing';
 import type { NetMessage, Realtime } from '../net/realtime';
 import { Remotes } from '../net/remotes';
 
 export type BannerTone = 'coral' | 'good' | 'plain';
 
+/** 카메라 시점 — 백뷰 / 착지 지점 타겟뷰 / 전체 코스 탑뷰 */
+export type ViewMode = 'back' | 'target' | 'top';
+
+export const VIEW_LABEL: Record<ViewMode, string> = {
+  back: '백뷰',
+  target: '타겟뷰',
+  top: '탑뷰',
+};
+
+/** 백뷰 → 타겟뷰 → 탑뷰 → 백뷰 */
+const VIEW_ORDER: ViewMode[] = ['back', 'target', 'top'];
+
 export interface GameEvents {
   onHole?: (spec: HoleSpec, holeIndex: number, strokes: number) => void;
   onStroke?: (strokes: number) => void;
   onGauge?: (state: GaugeView) => void;
   onClub?: (club: ClubId, recommended: ClubId, distance: number, surface: SurfaceKind) => void;
+  onView?: (mode: ViewMode) => void;
   onShot?: (plan: ShotPlan, club: Club) => void;
   onHoled?: (holeIndex: number, strokes: number, label: string) => void;
   onPenalty?: (kind: 'water' | 'out', strokes: number) => void;
@@ -39,6 +61,18 @@ export interface GaugeView {
   value: number;
   power: number;
   hint: string;
+  /** 지금 선택된 클럽 */
+  club: ClubId;
+  /** 남은 거리 (컵까지, m) */
+  distance: number;
+  /** 선택 클럽의 최대 비거리 (100% 파워, 현재 라이) */
+  clubMax: number;
+  /** 현재 게이지 파워 % (0~100) */
+  powerPercent: number;
+  /** 현재 파워의 예상 비거리 (m) */
+  estimate: number;
+  /** 목표 거리에 필요한 파워 (0~1, 1 초과 = 이 클럽으로 부족) */
+  neededPower: number;
 }
 
 export interface GameOptions {
@@ -77,6 +111,14 @@ const aimDashMaterial = new THREE.MeshBasicMaterial({
 });
 
 const _vec = new THREE.Vector3();
+const _camFocus = new THREE.Vector3();
+const _addr = new THREE.Vector3();
+
+/** 골퍼가 공 옆에 서는 거리 (m) */
+const ADDRESS_SIDE = 0.42;
+const ADDRESS_BACK = 0.12;
+/** 새 공 자리로 걸어가는 속도 (m/s) */
+const WALK_SPEED = 9;
 
 /** 홀 진행 · 스윙 게이지 · 샷 물리 · 스코어 · 네트워크를 관리하는 게임 컨트롤러 */
 export class Game {
@@ -109,9 +151,16 @@ export class Game {
   private strokes = 0;
   private records: HoleRecord[] = HOLES.map((h) => ({ par: h.par, strokes: null }));
 
-  private clubId: ClubId = 'driver';
-  private recommended: ClubId = 'driver';
+  private clubId: ClubId = '1W';
+  private recommended: ClubId = '1W';
+  /** 플레이어가 직접 클럽을 골랐는지 (다음 샷 준비 때 추천으로 초기화) */
+  private clubManual = false;
   private aimYaw = 0;
+  private viewMode: ViewMode = 'back';
+
+  /** 골퍼가 서 있는 자리 (샷 뒤에도 제자리에 남도록 따로 들고 있는다) */
+  private readonly golferPos = new THREE.Vector3();
+  private golferFacing = 0;
 
   private readonly pointers = new Map<number, PointerState>();
   private readonly lastShotPos = new THREE.Vector3();
@@ -204,8 +253,9 @@ export class Game {
 
     // 입장 화면 뒤에도 코스가 보이도록 첫 홀을 미리 세운다
     this.course = new Course(this.scene, HOLES[0]);
-    this.refreshRecommended(HOLES[0].tee[0], HOLES[0].tee[1]);
+    this.placeBall(HOLES[0].tee[0], HOLES[0].tee[1]);
     this.aimYaw = this.yawTo(HOLES[0].tee[0], HOLES[0].tee[1], HOLES[0].cup[0], HOLES[0].cup[1]);
+    this.refreshRecommended(this.ball.x, this.ball.z, true);
     this.rig.setAim(this.aimYaw, true);
     this.rig.setDistance(18);
     this.rig.setPitch(0.5);
@@ -219,6 +269,7 @@ export class Game {
     this.applyBallColor(identity.color);
     this.records = HOLES.map((h) => ({ par: h.par, strokes: null }));
     this.holeIndex = 0;
+    this.viewMode = 'back';
     this.startHole(0, true);
     this.sendHello();
   }
@@ -242,11 +293,14 @@ export class Game {
     this.state = 'ready';
     this.meter.reset();
     this.pointers.clear();
+    this.clubManual = false;
     this.aimYaw = this.yawTo(spec.tee[0], spec.tee[1], spec.cup[0], spec.cup[1]);
     this.placeBall(spec.tee[0], spec.tee[1]);
-    this.refreshRecommended(spec.tee[0], spec.tee[1]);
+    this.refreshRecommended(this.ball.x, this.ball.z, true);
     this.effects.clear();
     this.effects.clearTrail();
+    this.snapGolfer();
+    this.events.onView?.(this.viewMode);
 
     this.rig.setAim(this.aimYaw, true);
     this.rig.setDistance(10.5);
@@ -315,6 +369,8 @@ export class Game {
     if (this.identity) this.broadcast({ type: 'bye', id: this.identity.id });
     this.identity = null;
     this.state = 'idle';
+    this.viewMode = 'back';
+    this.events.onView?.(this.viewMode);
     this.ballVisual.visible = false;
     this.meter.reset();
     this.pointers.clear();
@@ -339,6 +395,30 @@ export class Game {
     const golfer = new Golfer({ color: this.identity.color, club: true });
     this.golfer = golfer;
     this.scene.add(golfer.group);
+    this.snapGolfer();
+  }
+
+  /** 골퍼가 공 옆에서 어드레스하는 자리 */
+  private addressSpot(out: THREE.Vector3): THREE.Vector3 {
+    const forwardX = Math.sin(this.aimYaw);
+    const forwardZ = -Math.cos(this.aimYaw);
+    const rightX = Math.cos(this.aimYaw);
+    const rightZ = Math.sin(this.aimYaw);
+    return out.set(
+      this.ball.x - forwardX * ADDRESS_BACK + rightX * ADDRESS_SIDE,
+      0,
+      this.ball.z - forwardZ * ADDRESS_BACK + rightZ * ADDRESS_SIDE,
+    );
+  }
+
+  /** 골퍼를 공 옆 새 자리로 바로 옮긴다 (홀 시작·입장 시) */
+  private snapGolfer(): void {
+    this.addressSpot(this.golferPos);
+    this.golferFacing = this.aimYaw;
+    if (this.golfer) {
+      this.golfer.group.position.copy(this.golferPos);
+      this.golfer.group.rotation.y = Math.atan2(Math.sin(this.aimYaw), -Math.cos(this.aimYaw));
+    }
   }
 
   private placeBall(x: number, z: number): void {
@@ -441,17 +521,58 @@ export class Game {
   }
 
   private updateCamera(dt: number): void {
-    if (this.state === 'flight' || this.state === 'sinking') {
-      this.rig.setAim(this.aimYaw);
+    this.rig.setAim(this.aimYaw);
+    const flying = this.state === 'flight' || this.state === 'sinking';
+
+    switch (this.viewMode) {
+      case 'top':
+        // 전체 코스 탑뷰: 티와 그린 사이를 넓게 내려다본다
+        this.rig.setDistance(this.topViewDistance());
+        this.rig.setPitch(1.16);
+        this.rig.update(dt, this.topViewFocus(), this.camera, false, 0);
+        return;
+      case 'target':
+        // 찜지 예정 지점/그린 상공 타겟뷰: 착지 링·그린·벙커·연못이 한눈에
+        this.rig.setDistance(flying ? 19 : 20);
+        this.rig.setPitch(0.6);
+        this.rig.update(dt, this.targetViewFocus(), this.camera, false, 0);
+        return;
+      default:
+        break;
+    }
+
+    if (flying) {
       this.rig.setDistance(this.ball.airborne ? 16 : 13);
       this.rig.setPitch(0.36);
       this.rig.update(dt, this.focusPoint(), this.camera, false, 3);
       return;
     }
-    this.rig.setAim(this.aimYaw);
     this.rig.setDistance(this.state === 'finished' ? 13 : 10.5);
     this.rig.setPitch(0.42);
     this.rig.update(dt, this.focusPoint(), this.camera, false, 1.5);
+  }
+
+  /** 타겟뷰 시선: 조준한 착지 지점(없으면 그린 중앙), 비행 중에는 공 */
+  private targetViewFocus(): THREE.Vector3 {
+    if (this.state === 'flight' || this.state === 'sinking') {
+      return _camFocus.set(this.ball.x, this.ball.y, this.ball.z);
+    }
+    const target = this.preview?.rest ?? this.preview?.landing;
+    if (target) return _camFocus.set(target.x, 0.15, target.z);
+    const cup = this.course?.cup;
+    return cup ? _camFocus.set(cup.x, 0.15, cup.z) : _camFocus.set(this.ball.x, 0.15, this.ball.z);
+  }
+
+  /** 탑뷰 시선: 티(공)와 그린 중앙의 중간 */
+  private topViewFocus(): THREE.Vector3 {
+    const green = HOLES[this.holeIndex].green;
+    return _camFocus.set((this.ball.x + green.x) / 2, 0.2, (this.ball.z + green.z) / 2);
+  }
+
+  private topViewDistance(): number {
+    const green = HOLES[this.holeIndex].green;
+    const span = Math.hypot(green.x - this.ball.x, green.z - this.ball.z);
+    return THREE.MathUtils.clamp(span * 1.5, 34, 86);
   }
 
   private syncVisuals(dt: number): void {
@@ -465,22 +586,54 @@ export class Game {
       this.ballVisual.rotateOnWorldAxis(axis, (speed * dt) / BALL_RADIUS);
     }
 
-    // 골퍼: 공 옆에 서서 조준 방향을 바라본다
-    if (this.golfer) {
-      const forwardX = Math.sin(this.aimYaw);
-      const forwardZ = -Math.cos(this.aimYaw);
-      const rightX = Math.cos(this.aimYaw);
-      const rightZ = Math.sin(this.aimYaw);
-      const offset = 0.42;
-      this.golfer.group.position.set(
-        this.ball.x - forwardX * 0.12 + rightX * offset,
-        0,
-        this.ball.z - forwardZ * 0.12 + rightZ * offset,
-      );
-      this.golfer.group.rotation.y = Math.atan2(forwardX, forwardZ);
-      this.golfer.setAddressing(this.state === 'ready' || this.state === 'gauge');
-      this.golfer.update(dt, false);
+    this.updateGolfer(dt);
+  }
+
+  /**
+   * 골퍼 위치.
+   * - 스윙·비행·착지·홀아웃 중: 샷을 친 자리에 그대로 서서 공만 날아가는 걸 본다
+   * - 샷 준비(ready/gauge): 새 공 옆 자리로 걸어가 어드레스 자세
+   */
+  private updateGolfer(dt: number): void {
+    const golfer = this.golfer;
+    if (!golfer) return;
+
+    const shotInProgress =
+      this.state === 'flight' || this.state === 'sinking' || this.state === 'between' || this.state === 'finished';
+
+    const face = (yaw: number) => {
+      this.golferFacing = yaw;
+      golfer.group.rotation.y = Math.atan2(Math.sin(yaw), -Math.cos(yaw));
+    };
+
+    if (shotInProgress) {
+      golfer.group.position.copy(this.golferPos);
+      face(this.golferFacing);
+      golfer.setAddressing(false);
+      golfer.update(dt, false);
+      return;
     }
+
+    const goal = this.addressSpot(_addr);
+    const dx = goal.x - this.golferPos.x;
+    const dz = goal.z - this.golferPos.z;
+    const dist = Math.hypot(dx, dz);
+    const walking = dist > 0.06;
+
+    if (walking) {
+      // 먼 거리도 1초 안에 도착하도록 걸음 속도를 거리에 맞춰 올린다
+      const speed = Math.max(WALK_SPEED, dist / 0.9);
+      const step = Math.min(dist, speed * dt);
+      this.golferPos.x += (dx / dist) * step;
+      this.golferPos.z += (dz / dist) * step;
+    } else {
+      this.golferPos.copy(goal);
+    }
+
+    golfer.group.position.copy(this.golferPos);
+    face(this.aimYaw);
+    golfer.setAddressing(!walking);
+    golfer.update(dt, walking);
   }
 
   private updateFlight(dt: number): void {
@@ -554,7 +707,7 @@ export class Game {
     this.effects.tap(new THREE.Vector3(this.ball.x, this.ball.y, this.ball.z));
     this.effects.clearTrail();
     this.aimYaw = this.yawTo(this.ball.x, this.ball.z, this.course?.cup.x ?? 0, this.course?.cup.z ?? 0);
-    this.refreshRecommended(this.ball.x, this.ball.z);
+    this.refreshRecommended(this.ball.x, this.ball.z, true);
     this.rig.setDistance(10.5);
 
     if (this.strokes >= this.strokeLimit()) {
@@ -652,7 +805,8 @@ export class Game {
     this.state = 'ready';
     this.meter.reset();
     this.aimYaw = this.yawTo(this.ball.x, this.ball.z, this.course?.cup.x ?? 0, this.course?.cup.z ?? 0);
-    this.refreshRecommended(this.ball.x, this.ball.z);
+    this.refreshRecommended(this.ball.x, this.ball.z, true);
+    this.snapGolfer();
     this.rig.setDistance(10.5);
 
     this.events.onStroke?.(this.strokes);
@@ -721,9 +875,53 @@ export class Game {
   setClub(id: ClubId): void {
     if (this.state !== 'ready' && this.state !== 'gauge') return;
     this.clubId = id;
+    this.clubManual = id !== this.recommended;
     this.audio.ui();
     this.emitClub();
+    this.emitGauge();
     this.refreshPreview(true);
+  }
+
+  /** 카메라 시점 순환 (백뷰 → 타겟뷰 → 탑뷰) */
+  cycleView(): ViewMode {
+    const index = VIEW_ORDER.indexOf(this.viewMode);
+    this.viewMode = VIEW_ORDER[(index + 1) % VIEW_ORDER.length];
+    this.audio.ui();
+    this.events.onView?.(this.viewMode);
+    return this.viewMode;
+  }
+
+  /** 특정 시점으로 지정 (검증/디버그용) */
+  setView(mode: ViewMode): void {
+    this.viewMode = mode;
+    this.events.onView?.(this.viewMode);
+  }
+
+  get view(): ViewMode {
+    return this.viewMode;
+  }
+
+  /** 현재 선택된 클럽 */
+  get currentClub(): Club {
+    return getClub(this.clubId);
+  }
+
+  get clubMax(): number {
+    return clubMaxDistance(getClub(this.clubId), this.surfaceAt(this.ball.x, this.ball.z));
+  }
+
+  /** 목표(컴)까지 남은 거리로 필요한 파워 (1 초과 = 이 클럽으로 부족) */
+  get neededPower(): number {
+    return powerForDistance(
+      getClub(this.clubId),
+      this.surfaceAt(this.ball.x, this.ball.z),
+      this.cupDistanceFrom(this.ball.x, this.ball.z),
+    );
+  }
+
+  /** 현재 파워에서의 예상 비거리 (m) */
+  estimateFor(power: number): number {
+    return estimateDistance(getClub(this.clubId), this.surfaceAt(this.ball.x, this.ball.z), power);
   }
 
   get club(): Club {
@@ -794,16 +992,14 @@ export class Game {
 
   // ---------------------------------------------------------------- 가이드
 
-  private refreshRecommended(x: number, z: number): void {
+  private refreshRecommended(x: number, z: number, force = false): void {
     const distance = this.cupDistanceFrom(x, z);
     const surface = this.surfaceAt(x, z);
     this.lastSurface = surface;
-    const recommended = recommendClub(distance, surface);
-    if (recommended !== this.recommended) {
-      this.recommended = recommended;
-      this.clubId = recommended;
-    }
-    // 수동 선택이 있어도 그린에서는 퍼터를 권장
+    this.recommended = recommendClub(distance, surface);
+    // 새 샷 준비 단계에서는 추천 클럽으로 초기화하고, 플레이어가 직접 고른 클럽은 존중한다
+    if (force) this.clubManual = false;
+    if (!this.clubManual) this.clubId = this.recommended;
     this.emitClub();
   }
 
@@ -936,11 +1132,20 @@ export class Game {
   }
 
   private gaugeView(): GaugeView {
+    const distance = this.cupDistanceFrom(this.ball.x, this.ball.z);
+    const power = this.state === 'gauge' ? this.meter.power : 0;
+    const live = this.state === 'gauge' && this.meter.phase === 'power' ? this.meter.value : power;
     return {
       phase: this.meter.phase,
       value: this.meter.value,
       power: this.meter.power,
       hint: this.meter.hint,
+      club: this.clubId,
+      distance,
+      clubMax: this.clubMax,
+      powerPercent: Math.round(Math.max(0, Math.min(1, live)) * 100),
+      estimate: this.estimateFor(live),
+      neededPower: this.neededPower,
     };
   }
 
@@ -985,6 +1190,7 @@ export class Game {
     club: ClubId;
     aim: number;
     distance: number;
+    view: ViewMode;
   } {
     const cup = this.course?.cup ?? new THREE.Vector3();
     return {
@@ -997,6 +1203,29 @@ export class Game {
       club: this.clubId,
       aim: this.aimYaw,
       distance: this.cupDistanceFrom(this.ball.x, this.ball.z),
+      view: this.viewMode,
+    };
+  }
+
+  /** 검증용: 골퍼·공 위치 (샷 후 골퍼가 제자리에 있는지 확인) */
+  debugGolfer(): { x: number; z: number; ballX: number; ballZ: number; facing: number } {
+    return {
+      x: this.golferPos.x,
+      z: this.golferPos.z,
+      ballX: this.ball.x,
+      ballZ: this.ball.z,
+      facing: this.golferFacing,
+    };
+  }
+
+  /** 검증용: 선택 클럽의 최대 비거리·필요 파워·예상 비거리 */
+  debugShotInfo(): { club: ClubId; clubMax: number; neededPower: number; distance: number; estimate50: number } {
+    return {
+      club: this.clubId,
+      clubMax: this.clubMax,
+      neededPower: this.neededPower,
+      distance: this.cupDistanceFrom(this.ball.x, this.ball.z),
+      estimate50: this.estimateFor(0.5),
     };
   }
 

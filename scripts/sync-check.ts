@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   // A가 샷 → B가 A의 위치 변화를 받아야 한다
   const start = gameA.debugState();
   gameA.debugAimAt(start.cup[0], start.cup[1]);
-  gameA.debugFire(0.6, 0, 'driver' as never);
+  gameA.debugFire(0.6, 0, '1W' as never);
   for (let i = 0; i < 30; i += 1) {
     gameA.update(1 / 60);
     gameB.update(1 / 60);
