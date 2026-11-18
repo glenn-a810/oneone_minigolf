@@ -142,7 +142,8 @@ export class GolfRoomHub {
       return;
     }
 
-    const attachment = readAttachment(socket) ?? { id: crypto.randomUUID(), joinedAt: Date.now() };
+    const attachment = readAttachment(socket) ?? { id: crypto.randomUUID(), joinedAt: Date.now(), last: null };
+    if (!readAttachment(socket)) socket.serializeAttachment(attachment);
     const mid =
       typeof frame.mid === 'string' && frame.mid.length > 0 && frame.mid.length <= 80
         ? frame.mid
