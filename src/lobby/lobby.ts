@@ -225,6 +225,8 @@ export class Lobby {
 
     this.mode = 'lobby';
     this.broadcastState();
+    // 서버에 이미 있던 골퍼들의 상태를 바로 받아 온다 (다른 기기에서 먼저 접속한 경우)
+    this.realtime.resync?.();
     this.emitPlayers();
   }
 

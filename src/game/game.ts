@@ -272,6 +272,8 @@ export class Game {
     this.viewMode = 'back';
     this.startHole(0, true);
     this.sendHello();
+    // 다른 기기에서 이미 라운드 중인 골퍼들의 상태를 바로 받아 온다
+    this.realtime.resync?.();
   }
 
   private applyBallColor(hex: string): void {

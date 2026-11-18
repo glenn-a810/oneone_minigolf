@@ -1,0 +1,23 @@
+# 원온 미니골프 실시간 동기화 워커
+#   배포: cd worker && npx wrangler deploy
+#   확인: https://oneone-minigolf-sync.a810-glenn.workers.dev/health
+#
+# Free 플랜 제약 때문에 Durable Object 는 반드시 SQLite 기반(new_sqlite_classes)으로 만든다.
+# (KV 기반 DO 는 유료 플랜 전용이라 Free 플랜에서 배포가 실패한다)
+name = "oneone-minigolf-sync"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+account_id = "b02f6f589253271f1dafef3639f7c2ee"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# 방(room) 하나 = Durable Object 하나.  idFromName("lobby") / idFromName("play-1")
+[[durable_objects.bindings]]
+name = "GOLF_ROOM"
+class_name = "GolfRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GolfRoom"]

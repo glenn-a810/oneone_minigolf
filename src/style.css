@@ -166,6 +166,39 @@ body {
   box-shadow: 0 0 0 3px rgba(255, 122, 89, 0.22);
 }
 
+/* 실시간 연결 상태 칩 (🟢 서버 연결 · 🟡 연결 중 · ⚪ 로컬 · ⚫ 오프라인) */
+.net-chip {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--card);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: #16323b;
+  box-shadow: 0 8px 18px rgba(18, 62, 84, 0.12);
+}
+
+.net-chip[data-state='online'] {
+  color: #1c7a4c;
+}
+
+.net-chip[data-state='waiting'] {
+  color: #8a6a12;
+}
+
+.net-chip[data-state='local'] {
+  color: #4a6172;
+}
+
+.net-chip[data-state='off'] {
+  color: #8a97a1;
+}
+
 .icon-btn {
   pointer-events: auto;
   width: 38px;
@@ -1490,6 +1523,9 @@ body {
   }
   .me-chip {
     max-width: 92px;
+  }
+  .net-chip {
+    display: none;
   }
   .banner h2 {
     font-size: 25px;

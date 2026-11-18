@@ -5,7 +5,7 @@ import type { HoleSpec, PlayerIdentity, PlayerSnapshot, RoundResult, SurfaceKind
 import { BALL_COLORS, EMOJIS, randomNickname } from './game/constants';
 import { HOLES } from './game/courses';
 import { AudioEngine } from './game/audio';
-import { createRealtime } from './net/realtime';
+import { createRealtime, LOBBY_ROOM, PLAY_ROOM, type NetStatus } from './net/realtime';
 import { InputController } from './game/input';
 import { bindHoldControl } from './game/swing-input';
 import { Lobby, type LobbyPeer } from './lobby/lobby';
@@ -111,7 +111,15 @@ lobbyScene.add(lobbyFill);
 // ---------------------------------------------------------------- 게임/오디오/네트워크
 
 const audio = new AudioEngine();
-const realtime = createRealtime();
+
+/**
+ * 실시간 동기화는 방(room) 단위다.
+ * - 대기실(lobby): 광장을 거닐고 이모지로 인사하는 공간
+ * - 플레이룸(play-1): 3홀 라운드 진행 상황
+ * 대기실 소켓은 플레이 중에도 살아 있으므로, 누가 플레이룸에 있는지가 대기실에 계속 보인다.
+ */
+const lobbyNet = createRealtime(LOBBY_ROOM);
+const playNet = createRealtime(PLAY_ROOM, { autoConnect: false });
 
 const banner = $('banner');
 const bannerTitle = $('banner-title');
@@ -170,6 +178,41 @@ function showToast(text: string): void {
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => toast.classList.add('hidden'), 2300);
 }
+
+// ---------------------------------------------------------------- 실시간 연결 상태
+
+const netChips = Array.from(document.querySelectorAll<HTMLElement>('[data-net]'));
+
+/** 연결 상태 칩: 🟢 서버 연결 · 🟡 연결 중 · ⚪ 로컬(탭끼리) · ⚫ 오프라인 */
+function renderNet(el: HTMLElement, status: NetStatus): void {
+  const count = status.peers > 0 ? `${status.peers}명` : '';
+  if (status.mode === 'websocket') {
+    el.dataset.state = 'online';
+    el.textContent = count ? `🟢 ${count}` : '🟢 실시간';
+    el.title = count ? `실시간 연결 · 같은 방 ${count}` : '다른 기기·휴대폰과 실시간으로 연결됐어요';
+  } else if (status.mode === 'connecting') {
+    el.dataset.state = 'waiting';
+    el.textContent = '🟡 연결 중';
+    el.title = '실시간 서버에 연결하는 중이에요';
+  } else if (status.mode === 'local') {
+    el.dataset.state = 'local';
+    el.textContent = '⚪ 로컬';
+    el.title = '같은 브라우저 탭끼리만 동기화돼요 (실시간 서버에 연결되지 않음)';
+  } else {
+    el.dataset.state = 'off';
+    el.textContent = '⚫ 오프라인';
+    el.title = '동기화가 꺼져 있어요. 혼자 플레이합니다';
+  }
+}
+
+function bindNetChip(net: ReturnType<typeof createRealtime>, room: string): void {
+  const chips = netChips.filter((el) => el.dataset.net === room);
+  if (chips.length === 0) return;
+  net.onStatus((status) => chips.forEach((el) => renderNet(el, status)));
+}
+
+bindNetChip(lobbyNet, 'lobby');
+bindNetChip(playNet, 'play');
 
 // ---------------------------------------------------------------- 화면 모드
 
@@ -334,7 +377,7 @@ const game = new Game({
   scene: gameScene,
   camera,
   audio,
-  realtime,
+  realtime: playNet,
   events: {
     onHole: (spec: HoleSpec) => {
       $('hole-no').textContent = `${spec.index + 1}홀`;
@@ -416,7 +459,7 @@ const lobby = new Lobby({
   scene: lobbyScene,
   camera,
   audio,
-  realtime,
+  realtime: lobbyNet,
   canvas,
   events: {
     onEnterPlayroom: () => enterPlayroom(),

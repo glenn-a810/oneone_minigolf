@@ -5,10 +5,10 @@
 광장에서 사람들을 만나 **이모지로 인사**한 뒤 빛나는 **플레이룸 게이트**로 들어가면 3홀 라운드가 시작됩니다.
 홀인원·버디 같은 이벤트를 달성하면 (다음 단계에서) 원온 앱에 등록할 수 있는 쿠폰 번호를 지급하는 구조를 염두에 두고 만들었습니다.
 
-> 현재 버전은 **쿠폰 기능 제외** 상태입니다. 대기실·이모지 소통·플레이룸(3홀)·기록·공유·탭 간 실시간 동기화까지 구현했습니다.
+> 현재 버전은 **쿠폰 기능 제외** 상태입니다. 대기실·이모지 소통·플레이룸(3홀)·기록·공유·**다른 기기/탭 간 실시간 동기화**까지 구현했습니다.
 
-- 스택: **Vite + TypeScript + Three.js + cannon-es**
-- 외부 서버/API 키/오디오 파일 의존 없음 (효과음은 Web Audio로 실시간 합성)
+- 스택: **Vite + TypeScript + Three.js + cannon-es** + **Cloudflare Workers / Durable Objects**(실시간 동기화, `worker/`)
+- 오디오 파일 의존 없음 (효과음은 Web Audio로 실시간 합성). 실시간 서버가 없어도 같은 브라우저 탭끼리는 그대로 동작합니다.
 
 ---
 
@@ -125,36 +125,104 @@ npx gh-pages -d dist      # 또는 dist/ 내용을 pages 브랜치에 푸시
 
 ---
 
-## 4. 여러 탭에서 함께 (실시간 동기화)
+## 4. 여러 기기에서 함께 (실시간 동기화)
 
-이 MVP는 서버 없이 **BroadcastChannel** 로 같은 브라우저의 탭끼리 통신합니다.
+실시간 동기화는 **두 겹**으로 동작합니다.
 
-1. 브라우저 탭을 2개 이상 엽니다. (같은 주소)
-2. 각 탭에서 닉네임/캐릭터 색상을 다르게 정하고 **대기실 입장**을 누릅니다.
+| 경로 | 대상 | 주소 |
+| --- | --- | --- |
+| **Cloudflare Worker + Durable Object WebSocket** | 다른 PC · 휴대폰 (인터넷 너머) | `wss://oneone-minigolf-sync.a810-glenn.workers.dev/ws?room=<room>` |
+| **BroadcastChannel** | 같은 브라우저의 탭끼리 (오프라인·로컬 개발) | 브라우저 내부 채널 |
+
+두 경로로 같은 메시지가 도착할 수 있어서, 메시지마다 붙인 `mid` 로 **한 번만** 처리합니다(중복 self-echo 방지).
+
+- 방(room)은 두 개로 나뉩니다. **`lobby`** = 3D 대기실, **`play-1`** = 3홀 플레이룸.
+  서버에서는 방 하나가 Durable Object 하나이고, 대기실 소켓은 플레이 중에도 살아 있어서
+  누가 플레이룸에 있는지가 대기실 인원에 계속 반영됩니다.
+- 연결이 끊기면 지수 백오프(0.5s → 최대 20s)로 다시 붙습니다.
+- 서버가 알려주는 접속자 수·연결 상태는 HUD 오른쪽 위 칩(`🟢 3명` · `🟡 연결 중` · `⚪ 로컬` · `⚫ 오프라인`)에 표시됩니다.
+
+### 확인 방법
+
+1. 기기(또는 브라우저) 두 대에서 같은 주소를 엽니다.
+2. 각자 닉네임/캐릭터 색상을 다르게 정하고 **대기실 입장**을 누릅니다.
 3. 대기실에서 서로의 **캐릭터 + 닉네임**이 보이고, 걷는 위치·이모지 말풍선이 실시간으로 동기화됩니다.
-4. 한쪽이 플레이룸 게이트로 들어가면 다른 탭에서는 그 사람이 **⛳ 플레이룸**으로 표시되고, 플레이룸 안에서는 서로의 **반투명 공 + 닉네임 라벨**과 샷·홀인·이모지가 동기화됩니다. (같은 홀에 있는 플레이어만 코스에 렌더링)
-5. 스코어카드의 `🏠 대기실로 돌아가기`로 대기실에 복귀하면 다시 광장에서 만납니다.
+4. 한쪽이 플레이룸 게이트로 들어가면 다른 쪽에서는 **⛳ 플레이룸**으로 표시되고,
+   플레이룸 안에서는 서로의 **반투명 공 + 닉네임 라벨**과 샷·홀인·이모지가 동기화됩니다. (같은 홀에 있는 플레이어만 코스에 렌더링)
+5. 스코어카드의 `🏠 대기실로 돌아가기`로 복귀하면 다시 광장에서 만납니다.
 
-> 시크릿 창은 BroadcastChannel이 분리되어 서로 보이지 않습니다. 일반 탭 2개로 테스트하세요.
+> 시크릿 창은 BroadcastChannel이 분리되어 탭끼리는 서로 보이지 않습니다. 이때는 서버 경로로만 만납니다.
 
-### 실제 서버로 교체하는 지점
+### 서버 주소 바꾸기 / 끄기
 
-`src/net/realtime.ts` 의 `Realtime` 인터페이스(`send` / `onMessage` / `close`)만 구현하면 전송 계층을 갈아 끼울 수 있습니다.
-메시지는 모두 순수 JSON(`NetMessage`)입니다.
+| 방법 | 예 |
+| --- | --- |
+| 빌드 환경변수 | `VITE_WS_URL=wss://내서버/ws npm run build` |
+| 주소 쿼리 | `?ws=wss://oneone-minigolf-sync.a810-glenn.workers.dev/ws`, `?ws=off` |
+| 로컬 개발(`npm run dev`) | 기본은 서버에 붙지 않음(탭 간 동기화만). 배포 서버에 붙여 보려면 `?ws=wss://…` |
 
-```ts
-// 예: Supabase Realtime 어댑터로 교체
-export function createRealtime(room: string): Realtime { /* ... */ }
+---
+
+## 4-1. 실시간 서버 (Cloudflare Workers + Durable Objects)
+
+`worker/` 폴더에 있습니다. **Workers Free 플랜**에서 그대로 돌아가도록 만들었습니다.
+
+- **SQLite 기반 Durable Object**(`new_sqlite_classes = ["GolfRoom"]`) — 무료 플랜에서 KV 기반 DO는 배포되지 않습니다.
+- **WebSocket Hibernation API**(`ctx.acceptWebSocket`, `webSocketMessage/Close/Error`, `serializeAttachment`) — 아무도 접속하지 않으면 Duration 한도를 쓰지 않습니다.
+  마지막 상태는 attachment 에 보관해서, DO가 잠들었다 깨어나도 신규 입장자에게 접속자 스냅샷을 그대로 줄 수 있습니다.
+- `ping` → `pong` 은 `setWebSocketAutoResponse` 로 런타임이 처리합니다(DO를 깨우지 않음).
+- 동시 접속 상한: 방당 64, 프레임 상한: 16KB.
+
+### 배포
+
+```bash
+cd worker
+npm install
+npx wrangler deploy        # 로그인되어 있거나 CLOUDFLARE_API_TOKEN 환경변수가 있으면 바로 배포
 ```
 
-| 후보 | 특징 |
-| --- | --- |
-| Supabase Realtime (Broadcast) | 무료 티어로 시작하기 쉽고, 추후 Auth/DB(쿠폰 발급)까지 한 곳에서 |
-| Cloudflare Durable Objects + WebSocket | 방(room) 단위 상태를 서버가 들고 있어 순서/충돌 제어에 유리 |
-| PartyKit / Ably / Firebase RTDB | 위 인터페이스로 감싸면 동일하게 사용 가능 |
+`worker/wrangler.toml` 에 계정·이름이 박혀 있습니다.
 
-서버로 옮길 때 추가로 필요한 것: 방 코드 입장, 발신자 인증(닉네임 위조 방지), 레이트 리밋,
-그리고 **쿠폰 번호 발급은 반드시 서버에서 검증 후 발급**.
+```toml
+name = "oneone-minigolf-sync"                                  # → https://oneone-minigolf-sync.a810-glenn.workers.dev
+account_id = "b02f6f589253271f1dafef3639f7c2ee"
+compatibility_date = "2026-11-01"
+workers_dev = true
+```
+
+배포 후 확인:
+
+```bash
+curl https://oneone-minigolf-sync.a810-glenn.workers.dev/health
+curl https://oneone-minigolf-sync.a810-glenn.workers.dev/rooms/lobby   # 지금 접속자 수
+```
+
+### 엔드포인트
+
+| 엔드포인트 | 설명 |
+| --- | --- |
+| `GET /health` | 200 OK + 서비스 정보 |
+| `GET /rooms/:room` | 그 방의 현재 접속자 수 (WebSocket 없이 확인) |
+| `GET /ws?room=<room>` · `GET /ws/<room>` | WebSocket 업그레이드 (방 없으면 `lobby`) |
+
+방 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,31}`.
+
+### 메시지 프로토콜
+
+게임 메시지(`NetMessage`)는 워커가 해석하지 않고 같은 방 전원에게 **발신자만 빼고** 그대로 중계합니다.
+
+| 방향 | 프레임 |
+| --- | --- |
+| → 서버 | `{t:'msg', mid, msg}` · `{t:'ping', ts}` · `{t:'sync'}` |
+| ← 클라이언트 | `{t:'ready', room, id, count, peers[]}` · `{t:'msg', mid, from, msg}` · `{t:'presence', room, count}` · `{t:'left', id}` · `{t:'pong'}` |
+
+`ready.peers[]` 는 신규 입장자에게 보내는 **현재 접속자 스냅샷**(각 소켓이 마지막으로 보낸 `hello`/`state`/`lobby` 메시지)입니다.
+`left` 를 받으면 클라이언트가 `bye`/`lobby-bye` 로 바꿔 처리하므로, 나간 사람이 20초 타임아웃까지 남아 있지 않습니다.
+
+### 다음 단계 (보안·운영)
+
+쿠폰 발급을 붙일 때를 대비해 서버로 옮겨야 하는 것: 발신자 인증(닉네임/점수 위조 방지),
+방 코드 기반 입장 제한, 레이트 리밋, **쿠폰 번호는 반드시 서버에서 검증 후 1회 발급**.
 
 ---
 
@@ -195,8 +263,19 @@ oneone_minigolf/
 │  │  ├─ constants.ts         # 조작감/판정 튜닝 상수
 │  │  └─ types.ts             # 코스/플레이어/라운드 타입
 │  └─ net/
-│     ├─ realtime.ts          # Realtime 어댑터 + BroadcastChannel 구현
+│     ├─ realtime.ts          # Realtime 어댑터 (WebSocket + BroadcastChannel, 재연결·중복 제거·상태 구독)
 │     └─ remotes.ts           # 다른 플레이어 공/닉네임 라벨 렌더링
+├─ worker/                    # 실시간 동기화 서버 (Cloudflare Workers + Durable Objects)
+│  ├─ wrangler.toml           # 워커 이름·계정, GOLF_ROOM 바인딩, SQLite DO 마이그레이션
+│  ├─ src/
+│  │  ├─ index.ts             # 라우팅(/health, /rooms/:room, /ws) + 워커 엔트리
+│  │  ├─ room.ts              # GolfRoom Durable Object + 방 단위 중계 로직(Hibernation)
+│  │  └─ protocol.ts          # 클라이언트↔서버 프레임 타입
+│  └─ test/
+│     ├─ relay-check.ts       # 중계 로직 단위 검증 (npm run verify:relay)
+│     ├─ net-check.ts         # 앱 ↔ 워커 프로토콜 통합 검증 (npm run verify:net)
+│     ├─ runtime-check.mjs    # 실제 workerd 런타임 확인 (cd worker && npm run verify:runtime)
+│     └─ live-check.mjs       # 배포된 워커 확인 (node worker/test/live-check.mjs <주소>)
 ```
 
 ---
@@ -236,6 +315,8 @@ npm run verify:physics   # 번호별 클럽 비거리/탄도 + 추천 클럽 + �
 npm run verify:swing     # 홀드&릴리즈 파워 확정 · 짧은 탭 취소 · Perfect/Good/Miss 판정 · 훅/슬라이스
 npm run verify:sync      # 같은 방에 게임 2개를 붙여 참가자·위치·이모지 동기화 확인
 npm run verify:lobby     # 대기실 2개를 붙여 이동·이모지·플레이룸 입장/복귀 동기화, 게스트 이동 확인
+npm run verify:relay     # Durable Object 중계 로직 (발신자 제외·스냅샷·퇴장·방 분리·잘못된 프레임)
+npm run verify:net       # 앱 ↔ 워커 프로토콜 (다른 기기 2대 가정, 중복 제거·재연결 포함)
 ```
 
 마지막 확인 결과 (참고):
@@ -244,5 +325,15 @@ npm run verify:lobby     # 대기실 2개를 붙여 이동·이모지·플레이
 - 자동 플레이: 1홀 홀인원 → 2홀 버디 → 3홀 더블보기 (합계 8타 / Par 8)
 - 두 인스턴스가 서로의 입장·위치·이모지(🔥)를 정상 수신
 - 대기실: 이동 동기화(1.9m/0.5초) · 게이트 도착 시 입장 트리거 · 플레이룸/대기실 인원 갱신 · 게스트 이동 확인
+
+워커는 따로 확인합니다.
+
+```bash
+cd worker
+npx tsc --noEmit                    # 워커 타입 체크
+npx wrangler deploy --dry-run       # 번들·바인딩 검증 (실제 배포 안 함)
+npm run verify:runtime             # 실제 workerd(Miniflare)로 헬스·중계·스냅샷·퇴장까지 확인
+node test/live-check.mjs https://oneone-minigolf-sync.a810-glenn.workers.dev   # 배포 후 실서버 확인
+```
 
 브라우저에서 실제 화면(3D 렌더링·터치 조작감)은 `npm run dev` 후 직접 확인하는 것을 권장합니다.

@@ -6,3 +6,12 @@ dist-ssr
 .DS_Store
 .vite
 *.log
+
+# Cloudflare Worker
+worker/node_modules
+worker/.wrangler
+worker/.tmp
+worker/.tmp-dist
+worker/.tmp-dev.log
+worker/.mf
+worker/.dev.vars
