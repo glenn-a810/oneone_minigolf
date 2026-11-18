@@ -13,6 +13,11 @@ const wsBase = base.replace(/^http/, 'ws');
 const room = `live-${Date.now().toString(36)}`;
 const url = `${wsBase}/ws?room=${room}`;
 
+if (typeof WebSocket === 'undefined') {
+  console.error('이 스크립트는 전역 WebSocket 이 있는 Node.js 22 이상이 필요합니다. (node -v 로 확인)');
+  process.exit(1);
+}
+
 let failures = 0;
 const check = (label, ok, detail = '') => {
   if (ok) console.log(`  [OK ] ${label}${detail ? ` — ${detail}` : ''}`);
