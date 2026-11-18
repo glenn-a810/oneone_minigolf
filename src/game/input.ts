@@ -14,7 +14,7 @@ interface InputHooks {
  *
  * - 화면 좌우 드래그: 조준 회전
  * - ←/→ 또는 A/D: 조준 미세 회전
- * - 스페이스/엔터: 스윙 게이지 탭 (시작 → 파워 → 임팩트)
+ * - 스페이스/엔터: 누르고 있으면 파워 게이지가 차오르고, 떼는 순간 파워 확정 → 다음 탭이 임팩트
  * - R: 공 되돌리기(+1벌타) · M: 소리 · H: 도움말 · V: 뷰 전환
  */
 export class InputController {
@@ -29,6 +29,8 @@ export class InputController {
     element.addEventListener('pointercancel', this.handleCancel);
     element.addEventListener('contextmenu', (event) => event.preventDefault());
     window.addEventListener('keydown', this.handleKey);
+    window.addEventListener('keyup', this.handleKeyUp);
+    window.addEventListener('blur', this.handleBlur);
   }
 
   private handleDown = (event: PointerEvent): void => {
@@ -71,7 +73,9 @@ export class InputController {
       case ' ':
       case 'enter':
         event.preventDefault();
-        this.game.swingTap();
+        // 키를 누르고 있는 동안 파워가 차오르므로 반복 입력은 무시한다
+        if (event.repeat) break;
+        this.game.swingPress();
         break;
       case 'r':
         this.game.resetBall();
@@ -91,11 +95,25 @@ export class InputController {
     }
   };
 
+  /** 스페이스/엔터에서 손을 떼면 그 지점의 파워가 확정된다 */
+  private handleKeyUp = (event: KeyboardEvent): void => {
+    if (event.key !== ' ' && event.key.toLowerCase() !== 'enter') return;
+    if (this.hooks.isActive && !this.hooks.isActive()) return;
+    this.game.swingRelease();
+  };
+
+  /** 창 포커스를 잃으면 누르고 있던 스윙은 무효 처리 */
+  private handleBlur = (): void => {
+    this.game.swingCancel();
+  };
+
   dispose(): void {
     this.element.removeEventListener('pointerdown', this.handleDown);
     this.element.removeEventListener('pointermove', this.handleMove);
     this.element.removeEventListener('pointerup', this.handleUp);
     this.element.removeEventListener('pointercancel', this.handleCancel);
     window.removeEventListener('keydown', this.handleKey);
+    window.removeEventListener('keyup', this.handleKeyUp);
+    window.removeEventListener('blur', this.handleBlur);
   }
 }

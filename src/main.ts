@@ -227,6 +227,7 @@ function renderGauge(view: GaugeView): void {
 
   gaugeLive = view.phase === 'power' || view.phase === 'impact';
   gaugeEl.classList.toggle('live', gaugeLive);
+  gaugeEl.classList.toggle('charging', view.phase === 'power');
   gaugeEl.classList.toggle('hit', view.phase === 'impact' && Math.abs(view.value) <= 0.105);
 
   gaugeHint.textContent = view.hint;
@@ -241,11 +242,11 @@ function renderGauge(view: GaugeView): void {
 
   if (view.phase === 'idle' || view.phase === 'done') {
     swingLabel.textContent = '스윙!';
-    swingSub.textContent = '탭 3번';
+    swingSub.textContent = '꾹 눌러 파워';
     swingButton.classList.remove('armed', 'impact');
   } else if (view.phase === 'power') {
-    swingLabel.textContent = '파워!';
-    swingSub.textContent = '지금 탭';
+    swingLabel.textContent = '놓으면 확정';
+    swingSub.textContent = `${view.powerPercent}%`;
     swingButton.classList.add('armed');
     swingButton.classList.remove('impact');
   } else {
@@ -326,15 +327,30 @@ function holdAim(button: HTMLButtonElement, delta: number): void {
 holdAim(aimLeft, -0.045);
 holdAim(aimRight, 0.045);
 
-swingButton.addEventListener('click', () => {
-  audio.unlock();
-  game.swingTap();
+swingButton.addEventListener('click', (event) => {
+  // 포인터·키보드 홀드는 pointerdown/up·keydown/up 이 처리한다 (click 중복 방지)
+  event.preventDefault();
 });
 
-gaugeEl.addEventListener('pointerdown', () => {
-  audio.unlock();
-  game.swingTap();
-});
+/** 스윙 버튼·게이지: 누르고 있는 동안 파워가 차오르고, 떼는 순간 확정된다 */
+function bindHoldControl(element: HTMLElement): void {
+  element.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    audio.unlock();
+    element.setPointerCapture?.(event.pointerId);
+    game.swingPress();
+  });
+  element.addEventListener('pointerup', (event) => {
+    event.preventDefault();
+    game.swingRelease();
+  });
+  element.addEventListener('pointercancel', () => game.swingCancel());
+  element.addEventListener('lostpointercapture', () => game.swingCancel());
+}
+
+bindHoldControl(swingButton);
+bindHoldControl(gaugeEl);
 
 // ---------------------------------------------------------------- 게임/대기실
 
@@ -523,7 +539,7 @@ function enterPlayroom(): void {
       phase: 'idle',
       value: 0,
       power: 0,
-      hint: '스윙! 을 눌러 게이지를 시작하세요',
+      hint: '스윙! 을 꾹 누르면 파워가 차요',
       club: game.currentClub.id,
       distance: game.cupDistance(),
       clubMax: game.clubMax,
@@ -531,7 +547,7 @@ function enterPlayroom(): void {
       estimate: 0,
       neededPower: game.neededPower,
     });
-    showBanner('플레이룸 입장', '3홀 · 조준하고 3번 탭으로 스윙!', 'plain');
+    showBanner('플레이룸 입장', '3홀 · 꾹 눌러 파워, 떼고 타이밍 탭!', 'plain');
     // 첫 입장(또는 ? 버튼)에서만 3단계 가이드를 보여준다
     if (!onboardingSeen()) openOnboarding();
   });
@@ -603,7 +619,7 @@ $button('btn-help-close').addEventListener('click', () => help.classList.add('hi
 
 // ---------------------------------------------------------------- 첫 입장 가이드
 
-const ONBOARDING_KEY = 'oneone:onboarding:v2';
+const ONBOARDING_KEY = 'oneone:onboarding:v3';
 const onboarding = $('onboarding');
 const onbSteps = Array.from(onboarding.querySelectorAll<HTMLElement>('.onb-step'));
 const onbDots = Array.from($('onb-dots').querySelectorAll<HTMLElement>('i'));

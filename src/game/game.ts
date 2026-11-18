@@ -834,6 +834,12 @@ export class Game {
 
   pointerDown(x: number, y: number, pointerId: number, button = 0): void {
     if (this.state === 'finished') return;
+    // 정확도 단계에서는 화면 어디를 탭해도 임팩트 타이밍으로 인정한다
+    if (this.state === 'gauge' && this.meter.phase === 'impact' && button !== 2) {
+      this.pointers.delete(pointerId);
+      this.swingTap();
+      return;
+    }
     if (button === 2 || this.pointers.size > 0) {
       this.pointers.set(pointerId, { x, y, role: 'orbit' });
       return;
@@ -940,12 +946,13 @@ export class Game {
   }
 
   /**
-   * 스윙 버튼/스페이스바 한 번 = 게이지 한 단계.
-   * 1탭 시작 → 2탭 파워 → 3탭 임팩트.
+   * 스윙 버튼/게이지/스페이스바를 **누른** 순간 (홀드 시작).
+   * - 샷 준비 상태면 파워 게이지가 차오르기 시작한다
+   * - 정확도 단계면 임팩트 타이밍 탭으로 처리한다
    */
-  swingTap(): void {
+  swingPress(): void {
     if (this.state === 'ready') {
-      if (this.meter.start()) {
+      if (this.meter.beginHold()) {
         this.state = 'gauge';
         this.audio.ui();
         this.emitGauge();
@@ -953,6 +960,53 @@ export class Game {
       }
       return;
     }
+    if (this.state !== 'gauge') return;
+    if (this.meter.phase === 'impact') {
+      this.swingTap();
+      return;
+    }
+    if (this.meter.phase === 'power') {
+      // 이전 홀드의 pointerup 을 놓쳤더라도 게이지가 멈춰 있지 않도록 새 홀드로 다시 시작한다
+      this.meter.reset();
+      this.meter.beginHold();
+      this.emitGauge();
+      this.refreshPreview(true);
+    }
+  }
+
+  /**
+   * 스윙 버튼/게이지/스페이스바에서 **손을 뗀** 순간 (파워 확정).
+   * 너무 짧게 눌렀다 뗀 실수 탭은 스윙을 취소하고 준비 상태로 돌려놓는다.
+   */
+  swingRelease(): void {
+    if (this.state !== 'gauge') return;
+    const result = this.meter.release();
+    if (result === 'tooShort') {
+      this.state = 'ready';
+      this.events.onToast?.('너무 짧게 뗐어요 · 꾹 눌러 파워를 채워보세요');
+      this.emitGauge();
+      this.refreshPreview(true);
+      return;
+    }
+    if (result === 'power') {
+      this.audio.ui();
+      this.emitGauge();
+      this.refreshPreview(true);
+    }
+  }
+
+  /** 드래그 취소 · 창 포커스 아웃 등으로 누르고 있던 스윙을 무효 처리한다 */
+  swingCancel(): void {
+    if (this.state !== 'gauge') return;
+    if (this.meter.cancelHold()) {
+      this.state = 'ready';
+      this.emitGauge();
+      this.refreshPreview(true);
+    }
+  }
+
+  /** 임팩트(정확도) 타이밍 탭 → 정확도 확정 후 샷 발사 */
+  swingTap(): void {
     if (this.state !== 'gauge') return;
 
     const plan = this.meter.tap();

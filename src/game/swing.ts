@@ -1,16 +1,32 @@
 import { GAUGE_IMPACT_SECONDS, GAUGE_POWER_SECONDS } from './constants';
 
 /**
- * 타이밍 스윙 게이지 (3-탭).
+ * 홀드 & 릴리즈 스윙 게이지 (2단계).
  *
- * 1) `스윙!` — 게이지가 왼쪽(0%)에서 오른쪽(100%)으로 부드럽게 차오른다.
- * 2) `파워!` — 차오르던 지점에서 탭하면 그 지점이 파워로 확정된다.
- * 3) `임팩트!` — 게이지가 다시 왼쪽 임팩트 존(0%)으로 돌아온다. 존 한가운데를 맞추면 Perfect,
- *    살짝 어긋나면 Good(훅/슬라이스 살짝), 크게 어긋나면 Miss(방향·비거리 손실).
+ * 1) `파워` — 스윙 버튼(또는 게이지)을 마우스로 누르거나 손가락으로 누르고 있는 동안
+ *    게이지가 0% → 100% 로 차오르고, 100%에 닿으면 다시 0% 쪽으로 내려간다(왕복).
+ *    **손을 떼는 순간(pointerup)의 게이지 위치가 파워로 확정된다.**
+ * 2) `임팩트` — 파워가 확정되면 게이지가 왼쪽 임팩트 존(0%)으로 돌아오고,
+ *    사용자가 타이밍에 맞춰 한 번 탭하면 정확도가 결정되며 샷이 나간다.
+ *    존 한가운데를 맞추면 Perfect, 살짝 어긋나면 Good(훅/슬라이스), 크게 어긋나면 Miss.
  */
 
 export type GaugePhase = 'idle' | 'power' | 'impact' | 'done';
 export type ShotGrade = 'perfect' | 'good' | 'miss';
+
+/** 게이지를 떼는 순간 확정되는 최소 파워 (너무 살짝 차올라도 이만큼은 나간다) */
+export const MIN_POWER = 0.12;
+/** 이보다 짧게 눌렀다 떼면 실수 탭으로 보고 스윙을 취소한다 (초) */
+export const MIN_HOLD_SECONDS = 0.14;
+
+/** Perfect 존 (게이지 값 기준 ±) */
+export const PERFECT_WINDOW = 0.045;
+/** Good 존 */
+export const GOOD_WINDOW = 0.105;
+/** Miss 로 처리되는 최대 오차 */
+export const MISS_WINDOW = 0.19;
+/** 이 지점을 넘도록 탭하지 않으면 스윙이 취소된다 */
+export const IMPACT_LIMIT = 0.24;
 
 export interface ShotPlan {
   grade: ShotGrade;
@@ -27,15 +43,6 @@ export interface ShotPlan {
   /** 파워 보정 배율 */
   powerMul: number;
 }
-
-/** Perfect 존 (게이지 값 기준 ±) */
-export const PERFECT_WINDOW = 0.045;
-/** Good 존 */
-export const GOOD_WINDOW = 0.105;
-/** Miss 로 처리되는 최대 오차 */
-export const MISS_WINDOW = 0.19;
-/** 이 지점을 넘도록 탭하지 않으면 스윙이 취소된다 */
-export const IMPACT_LIMIT = 0.24;
 
 export interface SwingUpdate {
   changed: boolean;
@@ -69,6 +76,10 @@ export class SwingMeter {
   value = 0;
   /** 확정된 파워 */
   power = 0;
+  /** 파워 게이지가 움직이는 방향 (1 = 차오르는 중, -1 = 100% 뒤 내려오는 중) */
+  direction: 1 | -1 = 1;
+  /** 이번에 누르고 있던 시간 (초) */
+  heldFor = 0;
   private lastPlan: ShotPlan | null = null;
 
   get active(): boolean {
@@ -79,28 +90,50 @@ export class SwingMeter {
     return this.lastPlan;
   }
 
-  /** 스윙 시작 (1탭) */
-  start(): boolean {
+  /** 손을 떼기 전, 지금 확정될 파워 (0~1) */
+  get livePower(): number {
+    return Math.max(MIN_POWER, Math.min(1, this.value));
+  }
+
+  /** 스윙 시작 — 버튼/게이지를 누른 순간 (홀드 시작) */
+  beginHold(): boolean {
     if (this.phase === 'power' || this.phase === 'impact') return false;
     this.phase = 'power';
     this.value = 0;
     this.power = 0;
+    this.direction = 1;
+    this.heldFor = 0;
     this.lastPlan = null;
     return true;
   }
 
   /**
-   * 탭 처리.
-   * - 파워 단계면 파워 확정 후 임팩트 단계로
-   * - 임팩트 단계면 샷 결과를 돌려준다
+   * 손을 뗀 순간 (pointerup / keyup).
+   * - `power`: 지금 게이지 위치가 파워로 확정되고 임팩트(정확도) 단계로 넘어간다
+   * - `tooShort`: 너무 짧은 실수 탭 → 스윙 취소
+   * - `null`: 파워 단계가 아니면 아무 일도 없다
    */
-  tap(): ShotPlan | null {
-    if (this.phase === 'power') {
-      this.power = Math.max(0.12, Math.min(1, this.value));
-      this.value = this.power;
-      this.phase = 'impact';
-      return null;
+  release(): 'power' | 'tooShort' | null {
+    if (this.phase !== 'power') return null;
+    if (this.heldFor < MIN_HOLD_SECONDS) {
+      this.reset();
+      return 'tooShort';
     }
+    this.power = this.livePower;
+    this.value = this.power;
+    this.phase = 'impact';
+    return 'power';
+  }
+
+  /** 누르고 있던 스윙을 취소한다 (pointercancel · 창 포커스 아웃 등) */
+  cancelHold(): boolean {
+    if (this.phase !== 'power') return false;
+    this.reset();
+    return true;
+  }
+
+  /** 임팩트(정확도) 타이밍 탭 */
+  tap(): ShotPlan | null {
     if (this.phase === 'impact') {
       const plan = planShot(this.power, this.value);
       this.lastPlan = plan;
@@ -112,12 +145,15 @@ export class SwingMeter {
 
   update(dt: number): SwingUpdate {
     if (this.phase === 'power') {
-      this.value += dt / GAUGE_POWER_SECONDS;
+      // 누르고 있는 동안 0% → 100% 로 차오르고, 100%에 닿으면 다시 내려오며 왕복한다
+      this.heldFor += dt;
+      this.value += (this.direction * dt) / GAUGE_POWER_SECONDS;
       if (this.value >= 1) {
         this.value = 1;
-        this.power = 1;
-        this.phase = 'impact';
-        return { changed: true, timedOut: false, plan: null };
+        this.direction = -1;
+      } else if (this.value <= 0 && this.direction < 0) {
+        this.value = 0;
+        this.direction = 1;
       }
       return { changed: true, timedOut: false, plan: null };
     }
@@ -140,12 +176,18 @@ export class SwingMeter {
     this.phase = 'idle';
     this.value = 0;
     this.power = 0;
+    this.direction = 1;
+    this.heldFor = 0;
     this.lastPlan = null;
   }
 
   get hint(): string {
-    if (this.phase === 'idle') return '스윙! 을 눌러 게이지를 시작하세요';
-    if (this.phase === 'power') return '원하는 파워에서 다시 탭!';
+    if (this.phase === 'idle') return '스윙! 을 꾹 누르면 파워가 차요';
+    if (this.phase === 'power') {
+      if (this.value >= 0.999) return '최대 파워! 떼면 확정돼요';
+      if (this.direction < 0) return '100% 지나 내려오는 중 · 떼면 확정';
+      return '꾹 누른 채 원하는 파워에서 떼세요';
+    }
     if (this.phase === 'impact') return '임팩트 존에서 탭!';
     return '샷!';
   }
