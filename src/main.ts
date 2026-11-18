@@ -7,6 +7,7 @@ import { HOLES } from './game/courses';
 import { AudioEngine } from './game/audio';
 import { createRealtime } from './net/realtime';
 import { InputController } from './game/input';
+import { bindHoldControl } from './game/swing-input';
 import { Lobby, type LobbyPeer } from './lobby/lobby';
 import { SURFACE_LABEL, CLUBS, getClub, type ClubId } from './game/clubs';
 import { applyRendererLook, buildSky } from './game/environment';
@@ -327,31 +328,6 @@ function holdAim(button: HTMLButtonElement, delta: number): void {
 holdAim(aimLeft, -0.045);
 holdAim(aimRight, 0.045);
 
-swingButton.addEventListener('click', (event) => {
-  // 포인터·키보드 홀드는 pointerdown/up·keydown/up 이 처리한다 (click 중복 방지)
-  event.preventDefault();
-});
-
-/** 스윙 버튼·게이지: 누르고 있는 동안 파워가 차오르고, 떼는 순간 확정된다 */
-function bindHoldControl(element: HTMLElement): void {
-  element.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    event.preventDefault();
-    audio.unlock();
-    element.setPointerCapture?.(event.pointerId);
-    game.swingPress();
-  });
-  element.addEventListener('pointerup', (event) => {
-    event.preventDefault();
-    game.swingRelease();
-  });
-  element.addEventListener('pointercancel', () => game.swingCancel());
-  element.addEventListener('lostpointercapture', () => game.swingCancel());
-}
-
-bindHoldControl(swingButton);
-bindHoldControl(gaugeEl);
-
 // ---------------------------------------------------------------- 게임/대기실
 
 const game = new Game({
@@ -431,6 +407,10 @@ const game = new Game({
     },
   },
 });
+
+// 스윙 버튼·게이지: 누르고 있는 동안 파워가 차오르고, 떼는 순간 확정된다
+bindHoldControl(swingButton, game, { onPress: () => audio.unlock() });
+bindHoldControl(gaugeEl, game, { onPress: () => audio.unlock() });
 
 const lobby = new Lobby({
   scene: lobbyScene,
