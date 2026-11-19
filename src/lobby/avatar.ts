@@ -184,6 +184,8 @@ export class Golfer {
     const shirt = hex;
 
     this.root.position.y = 0;
+    // 골퍼는 움직이므로 실사 메시를 정적 병합에서 제외한다
+    this.group.userData.oneoneDynamic = true;
     this.group.add(this.root);
 
     // 몸통·다리·머리 (색상별로 캐시되는 합성 메시)

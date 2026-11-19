@@ -401,6 +401,83 @@ export function realVariantFor(key: string): THREE.Group | null {
   return group;
 }
 
+interface RealMergedGroup extends THREE.Group {
+  userData: { oneoneRealMerged: true; geometries: THREE.BufferGeometry[] };
+}
+
+/**
+ * 코스·광장에 놓인 **정적 소품들**의 실사 메시를 재질별로 하나씩 합친 그룹을 만든다.
+ *
+ * 소품마다 메시를 따로 두면 실사 모드의 드로우콜이 수백 개로 늘어나므로,
+ * 폴리 모드의 `mergeStaticMeshes` 와 같은 방식으로 실사 메시도 재질별로 합친다.
+ * 움직이는 그룹(골퍼·공 등 `userData.oneoneDynamic`) 아래 소품은 제외하고,
+ * 그런 소품은 룩 시스템이 개별 변형 메시로 다룬다.
+ *
+ * 반환된 그룹은 처음에 감춰져 있고, 만든 지오메트리는 `userData.geometries` 에 담겨 있다.
+ */
+export function buildRealMergedGroup(root: THREE.Object3D): RealMergedGroup | null {
+  root.updateMatrixWorld(true);
+
+  const buckets = new Map<
+    THREE.Material,
+    { material: THREE.Material; cast: boolean; geometries: THREE.BufferGeometry[] }
+  >();
+  const props: THREE.Object3D[] = [];
+
+  root.traverse((object) => {
+    if (!object.userData?.propKey) return;
+    let node: THREE.Object3D | null = object;
+    while (node) {
+      if (node.userData?.oneoneDynamic) return;
+      node = node.parent;
+    }
+    props.push(object);
+  });
+
+  for (const prop of props) {
+    const key = prop.userData.propKey as string;
+    const variant = realVariantFor(key);
+    if (!variant) continue;
+    prop.userData.realMerged = true;
+    prop.updateWorldMatrix(true, false);
+    for (const child of variant.children) {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) continue;
+      const material = mesh.material as THREE.Material;
+      let bucket = buckets.get(material);
+      if (!bucket) {
+        bucket = { material, cast: mesh.castShadow, geometries: [] };
+        buckets.set(material, bucket);
+      }
+      const geometry = mesh.geometry.clone();
+      geometry.applyMatrix4(prop.matrixWorld);
+      bucket.geometries.push(geometry);
+    }
+  }
+
+  if (buckets.size === 0) return null;
+
+  const group = new THREE.Group() as RealMergedGroup;
+  group.name = 'real-merged';
+  group.visible = false;
+  const geometries: THREE.BufferGeometry[] = [];
+
+  buckets.forEach((bucket) => {
+    const merged = mergeGeometries(bucket.geometries, false);
+    bucket.geometries.forEach((geometry) => geometry.dispose());
+    if (!merged) return;
+    merged.computeBoundingSphere();
+    const mesh = new THREE.Mesh(merged, bucket.material);
+    mesh.castShadow = bucket.cast;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    geometries.push(merged);
+  });
+
+  group.userData = { oneoneRealMerged: true, geometries };
+  return group;
+}
+
 /** 캐시된 소품 지오메트리 정리 (씬을 완전히 버릴 때만) */
 export function disposePropCache(): void {
   propCache.forEach((entry) => {

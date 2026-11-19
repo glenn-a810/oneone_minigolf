@@ -247,6 +247,15 @@ function applyVariant(group: THREE.Object3D): void {
   const key = group.userData?.propKey as string | undefined;
   if (!key) return;
 
+  // 정적 소품은 재질별로 합친 실사 메시(real-merged)가 대신 서므로 개별 변형을 만들지 않는다
+  if (group.userData.realMerged === true) {
+    for (const child of group.children) {
+      const variant = child.userData?.oneoneVariantOf as GraphicLook | undefined;
+      child.visible = variant ? variant === current : current !== 'real';
+    }
+    return;
+  }
+
   let real = group.userData.realVariant as THREE.Group | undefined;
   if (current === 'real' && !real) {
     const built = realVariantFor(key);
@@ -274,6 +283,8 @@ function applyVariantGroups(root: THREE.Object3D): void {
   const groups: THREE.Object3D[] = [];
   root.traverse((object) => {
     if (object.userData?.propKey) groups.push(object);
+    // 합쳐 둔 실사 메시 그룹은 통째로 보이거나 감춘다
+    if (object.userData?.oneoneRealMerged) object.visible = current === 'real';
   });
   groups.forEach(applyVariant);
 }

@@ -284,19 +284,47 @@ const kindsOf = (root: THREE.Object3D): Set<string> => {
 };
 const hole1Kinds = kindsOf(hole1.group);
 check('실사 상태에서 새 홀의 지면·소품이 PBR 로 채워진다', hole1Kinds.has('fairway') && hole1Kinds.has('turf'), [...hole1Kinds].join(', '));
-const hole1Variants = (() => {
+const hole1Merged = (() => {
+  let count = 0;
+  let visible = false;
+  hole1.group.traverse((object) => {
+    if (object.userData?.oneoneRealMerged) {
+      count += object.children.length;
+      visible = object.visible;
+    }
+  });
+  return { count, visible };
+})();
+check(
+  '새 홀의 실사 메시도 재질별로 합쳐진다 (드로우콜 절감)',
+  hole1Merged.count >= 5 && hole1Merged.count <= 24,
+  `${hole1Merged.count}개 재질`,
+);
+check('합쳐 둔 실사 메시가 실사 모드에서 보인다', hole1Merged.visible === true);
+const visibleMeshes = (() => {
   let count = 0;
   hole1.group.traverse((object) => {
-    if (object.userData?.oneoneVariantOf === 'real') count += 1;
+    const mesh = object as THREE.Mesh;
+    if (mesh.isMesh && mesh.visible) count += 1;
   });
   return count;
 })();
-check('새 홀에도 실사 변형 메시가 붙는다', hole1Variants > 20, `${hole1Variants}개`);
+check('실사 모드의 화면 메시 수가 폴리 수준으로 유지된다', visibleMeshes <= 80, `${visibleMeshes}개`);
 releaseLookGeometry(hole1.group);
 hole1.dispose();
 const hole2 = new Course(courseScene, HOLES[1]);
 syncLook(courseScene);
 check('홀을 넘겨도 실사 룩이 유지된다', kindsOf(hole2.group).has('green'), [...kindsOf(hole2.group)].join(', '));
+check(
+  '홀을 넘겨도 실사 병합 메시가 다시 만들어진다',
+  (() => {
+    let count = 0;
+    hole2.group.traverse((object) => {
+      if (object.userData?.oneoneRealMerged) count += 1;
+    });
+    return count === 1;
+  })(),
+);
 hole2.dispose();
 setLook('synty');
 check('홀 교체 후 폴리로 돌아와도 오류 없음', getLook() === 'synty');

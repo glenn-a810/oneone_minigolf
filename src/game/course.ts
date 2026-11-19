@@ -20,7 +20,7 @@ import {
   createBridge,
   createYardagePost,
 } from './scenery';
-import { PALETTE, mergeStaticMeshes, paintFaces, seeded } from './props';
+import { PALETTE, buildRealMergedGroup, mergeStaticMeshes, paintFaces, seeded } from './props';
 import { FALLBACK, flagTexture, waterTexture } from './textures';
 import { markGround, releaseLookGeometry } from './graphics';
 import type { SurfaceKind } from './pbr';
@@ -810,8 +810,15 @@ export class Course {
     // 홀 테마 랜드마크 · 세부 소품
     this.buildCourseDressing();
 
-    // 정적인 메시는 하나로 합쳐 드로우콜을 줄인다 (깃발 천·물·링은 투명/움직임이라 그대로 둔다)
-    this.geometries.push(...mergeStaticMeshes(this.group));
+    // 실사 룩용 메시도 재질별로 합쳐 둔다 (처음엔 감춰져 있고, 실사 모드에서 보인다)
+    const realMerged = buildRealMergedGroup(this.group);
+    if (realMerged) {
+      this.group.add(realMerged);
+      this.geometries.push(...realMerged.userData.geometries);
+    }
+
+    // 정적인 폴리 메시는 하나로 합쳐 드로우콜을 줄인다 (깃발 천·물·링은 투명/움직임이라 그대로 둔다)
+    this.geometries.push(...mergeStaticMeshes(this.group, new Set(realMerged ? [realMerged] : [])));
   }
 
   private buildDecor(decor: DecorSpec): void {

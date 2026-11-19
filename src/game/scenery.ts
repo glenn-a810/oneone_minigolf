@@ -713,6 +713,7 @@ export function createCloudSprite(scale = 1): THREE.Sprite | null {
 /** 플레이어 공 (딤플 텍스처 + 흰 점) */
 export function createBall(color: number, radius: number, transparent = false): THREE.Group {
   const g = new THREE.Group();
+  g.userData.oneoneDynamic = true;
 
   const dimple = ballTexture();
   const mat = new THREE.MeshStandardMaterial({

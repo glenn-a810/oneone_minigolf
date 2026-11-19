@@ -5,7 +5,7 @@ import type { LobbySnapshot, NetMessage, Realtime } from '../net/realtime';
 import { BALL_COLORS, LOBBY_EMOJIS } from '../game/constants';
 import { Golfer, emojiBubbleSprite } from './avatar';
 import { PLAZA_GATE, buildPlaza, type PlazaHandle } from './plaza';
-import { mergeStaticMeshes } from '../game/props';
+import { buildRealMergedGroup, mergeStaticMeshes } from '../game/props';
 
 /**
  * 3D 대기실(클럽하우스 광장).
@@ -274,8 +274,17 @@ export class Lobby {
     this.plazaHandle = buildPlaza(this.plaza);
     this.gateGroup = this.plazaHandle.gate;
     this.obstacles.push(...this.plazaHandle.obstacles);
+    // 실사 룩용 메시도 재질별로 합쳐 둔다 (처음엔 감춰져 있고, 실사 모드에서 보인다)
+    const realMerged = buildRealMergedGroup(this.plaza);
+    if (realMerged) {
+      this.plaza.add(realMerged);
+      this.mergedGeometries.push(...realMerged.userData.geometries);
+    }
+
     // 정적인 소품은 합쳐 드로우콜을 줄인다 (게이트·물은 애니메이션이라 그대로 둔다)
-    this.mergedGeometries.push(...mergeStaticMeshes(this.plaza, new Set([this.gateGroup])));
+    const skip = new Set<THREE.Object3D>([this.gateGroup]);
+    if (realMerged) skip.add(realMerged);
+    this.mergedGeometries.push(...mergeStaticMeshes(this.plaza, skip));
   }
 
   private buildGuests(): void {
