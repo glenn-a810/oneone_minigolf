@@ -53,10 +53,10 @@ buildSky(gameScene, {
   sunDirection: new THREE.Vector3(0.42, 0.66, 0.46),
 });
 
-const gameHemi = new THREE.HemisphereLight(0xdcefff, 0x8db46a, 0.85);
+const gameHemi = new THREE.HemisphereLight(0xdcefff, 0x9aa885, 0.58);
 gameScene.add(gameHemi);
 
-const gameSun = new THREE.DirectionalLight(0xfff3dc, 2.55);
+const gameSun = new THREE.DirectionalLight(0xfff3dc, 2.15);
 gameSun.position.set(20, 30, 18);
 gameSun.castShadow = true;
 gameSun.shadow.mapSize.set(2048, 2048);
@@ -71,7 +71,7 @@ gameSun.shadow.normalBias = 0.035;
 gameScene.add(gameSun);
 gameScene.add(gameSun.target);
 
-const gameFill = new THREE.DirectionalLight(0xcfe6ff, 0.4);
+const gameFill = new THREE.DirectionalLight(0xcfe6ff, 0.3);
 gameFill.position.set(-16, 12, -20);
 gameScene.add(gameFill);
 
@@ -86,10 +86,10 @@ buildSky(lobbyScene, {
   sunDirection: new THREE.Vector3(0.5, 0.6, 0.42),
 });
 
-const lobbyHemi = new THREE.HemisphereLight(0xe4f4ff, 0x93c878, 0.85);
+const lobbyHemi = new THREE.HemisphereLight(0xe4f4ff, 0xa8a88c, 0.6);
 lobbyScene.add(lobbyHemi);
 
-const lobbySun = new THREE.DirectionalLight(0xfff4dc, 2.5);
+const lobbySun = new THREE.DirectionalLight(0xfff4dc, 2.2);
 lobbySun.position.set(17, 24, 13);
 lobbySun.castShadow = true;
 lobbySun.shadow.mapSize.set(2048, 2048);

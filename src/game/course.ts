@@ -9,6 +9,7 @@ import {
   createGazebo,
   createGolfCart,
   createGrassTuft,
+  createLamp,
   createLily,
   createPine,
   createReeds,
@@ -107,6 +108,59 @@ function corridorPolygon(line: Pt[], halfWidth: number): Pt[] {
   }
 
   return polygon;
+}
+
+/**
+ * 폴리라인을 따라 만든 격자 리본 지면.
+ * ExtrudeGeometry 는 길쭉한 슬리버 삼각형이 생겨 면 단위 색이 쐐기처럼 보이므로,
+ * 페어웨이처럼 색 띠가 필요한 곳은 촘촘한 격자로 직접 만든다.
+ */
+function corridorGrid(
+  line: Pt[],
+  halfWidth: number,
+  lateral = 8,
+  keep?: (x: number, z: number) => boolean,
+): THREE.BufferGeometry {
+  const n = line.length;
+  const normals: Array<{ x: number; z: number }> = [];
+  for (let i = 0; i < n; i += 1) {
+    const prev = line[Math.max(0, i - 1)];
+    const next = line[Math.min(n - 1, i + 1)];
+    let tx = next.x - prev.x;
+    let tz = next.z - prev.z;
+    const len = Math.hypot(tx, tz) || 1;
+    tx /= len;
+    tz /= len;
+    normals.push({ x: -tz, z: tx });
+  }
+
+  const rows: Pt[][] = [];
+  for (let i = 0; i < n; i += 1) {
+    const row: Pt[] = [];
+    for (let j = 0; j <= lateral; j += 1) {
+      const t = (j / lateral) * 2 - 1;
+      row.push({ x: line[i].x + normals[i].x * halfWidth * t, z: line[i].z + normals[i].z * halfWidth * t });
+    }
+    rows.push(row);
+  }
+
+  const positions: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    for (let j = 0; j < lateral; j += 1) {
+      const a = rows[i][j];
+      const b = rows[i][j + 1];
+      const c = rows[i + 1][j];
+      const d = rows[i + 1][j + 1];
+      if (keep && !keep((a.x + b.x + c.x + d.x) / 4, (a.z + b.z + c.z + d.z) / 4)) continue;
+      positions.push(a.x, 0, a.z, d.x, 0, d.z, c.x, 0, c.z);
+      positions.push(a.x, 0, a.z, b.x, 0, b.z, d.x, 0, d.z);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 /** 폴리라인을 옆으로 평행 이동 (카트 길·옹벽 배치용) */
@@ -397,7 +451,7 @@ export class Course {
       apronMat,
       (cx, _cy, cz, _ny, out) => {
         const t = noise2(Math.floor(cx * 0.22), Math.floor(cz * 0.22));
-        out.setHex(t > 0.55 ? PALETTE.rough : PALETTE.roughDark);
+        out.setHex(t > 0.55 ? PALETTE.meadow : PALETTE.meadowDark);
         out.offsetHSL(0, 0, (t - 0.5) * 0.05);
         return out;
       },
@@ -407,6 +461,9 @@ export class Course {
 
     // 연못은 섬에 구멍을 뚫어 파인 웅덩이로 보이게 한다
     const waterZones = (hole.zones ?? []).filter((zone) => zone.kind === 'water');
+    /** 연못 위에는 페어웨이·카트 길을 깔지 않는다 (물이 드러나 보이도록) */
+    const onLand = (x: number, z: number): boolean =>
+      !waterZones.some((zone) => ((x - zone.x) / (zone.rx * 1.04)) ** 2 + ((z - zone.z) / (zone.rz * 1.04)) ** 2 <= 1);
     const holes = waterZones
       .map((zone) => ellipsePoints(zone))
       .filter((points) => points.every((point) => pointInPolygon(this.islandPoly, point.x, point.z)));
@@ -427,42 +484,36 @@ export class Course {
         out.setHex(PALETTE.soilDark);
         return out;
       },
-      0.07,
+      0.03,
     );
     island.castShadow = true;
 
-    // 페어웨이 — 깎은 잔디 스트라이프가 보이는 리본 + 어두운 테두리
+    // 페어웨이 — 깎은 잔디 스트라이프가 또렷한 격자 리본 + 어두운 테두리
     const fairwayMat = this.groundMaterial(0.93);
-    const hemGeo = extrudedGround(corridorPolygon(this.fairwayLine, hole.fairwayWidth + 0.42), [], 0.06);
     const hem = this.addGround(
-      hemGeo,
+      corridorGrid(this.fairwayLine, hole.fairwayWidth + 0.42, 10, onLand),
       fairwayMat,
-      (_cx, _cy, _cz, ny, out) => {
-        out.setHex(ny > 0.6 ? PALETTE.fairwayDark : PALETTE.grassDark);
+      (cx, _cy, cz, _ny, out) => {
+        out.setHex(noise2(Math.floor(cx * 0.4), Math.floor(cz * 0.4)) > 0.5 ? PALETTE.fairwayDark : PALETTE.grassDark);
         return out;
       },
       0.05,
     );
-    hem.position.y = 0.006;
+    hem.position.y = 0.008;
 
-    const fairwayGeo = extrudedGround(corridorPolygon(this.fairwayLine, hole.fairwayWidth), [], 0.06);
     const fairway = this.addGround(
-      fairwayGeo,
+      corridorGrid(this.fairwayLine, hole.fairwayWidth, 10, onLand),
       fairwayMat,
-      (cx, _cy, cz, ny, out) => {
-        if (ny <= 0.6) {
-          out.setHex(PALETTE.grassDark);
-          return out;
-        }
+      (cx, _cy, cz, _ny, out) => {
         const along = alongPath(this.fairwayLine, this.pathArc, cx, cz);
-        const stripe = Math.floor(along / 5.2) % 2 === 0;
+        const stripe = Math.floor(along / 7.5) % 2 === 0;
         out.setHex(stripe ? PALETTE.fairway : PALETTE.fairwayDark);
-        out.offsetHSL(0, 0, (noise2(Math.floor(cx * 0.5), Math.floor(cz * 0.5)) - 0.5) * 0.03);
+        out.offsetHSL(0, 0, (noise2(Math.floor(cx * 0.45), Math.floor(cz * 0.45)) - 0.5) * 0.025);
         return out;
       },
-      0.04,
+      0.035,
     );
-    fairway.position.y = 0.012;
+    fairway.position.y = 0.014;
 
     // 그린 + 프린지 링 + 에이프런 링
     const greenMat = this.groundMaterial(0.88);
@@ -527,7 +578,7 @@ export class Course {
         },
         0.05,
       );
-      lip.position.set(zone.x, 0.018, zone.z);
+      lip.position.set(zone.x, 0.026, zone.z);
       lip.castShadow = true;
       const sand = this.addGround(
         ellipseDisc(zone.rx * 0.98, zone.rz * 0.98, 44),
@@ -538,7 +589,7 @@ export class Course {
         },
         0.05,
       );
-      sand.position.set(zone.x, 0.012, zone.z);
+      sand.position.set(zone.x, 0.021, zone.z);
     }
 
     // 연못 — 파인 웅덩이 + 잔물결 + 거품 테두리
@@ -641,7 +692,7 @@ export class Course {
       teePadGeo,
       teePadMat,
       (cx, cy, cz, ny, out) => {
-        if (ny > 0.6) return turfTone(PALETTE.fairway, cx, cz, out);
+        if (ny > 0.6) return turfTone(PALETTE.fairwayDark, cx, cz, out);
         out.setHex(cy > -0.05 ? PALETTE.grassDark : PALETTE.soil);
         return out;
       },
@@ -649,22 +700,48 @@ export class Course {
     );
     teePad.position.set(0, 0.02, 0);
 
+    const teeRimMat = this.groundMaterial(0.95, false);
+    const teeRim = this.addGround(
+      ellipseRing(0.95, 1.0, 2.34, 1.84, 40),
+      teeRimMat,
+      (_cx, _cy, _cz, _ny, out) => {
+        out.setHex(PALETTE.stoneDark);
+        return out;
+      },
+      0.04,
+    );
+    teeRim.position.set(hole.tee[0], 0.021, hole.tee[1]);
+
     const teeMarkerMat = this.groundMaterial(0.7, false);
     [-1.0, 1.0].forEach((dx) => {
-      const markerGeo = new THREE.ConeGeometry(0.12, 0.26, 3);
+      const postGeo = new THREE.CylinderGeometry(0.055, 0.07, 0.3, 5);
       const marked = paintFaces(
-        markerGeo,
+        postGeo,
+        (_cx, cy, _cz, _ny, out) => {
+          out.setHex(cy > 0.12 ? PALETTE.coral : PALETTE.cream);
+          return out;
+        },
+        0.04,
+      );
+      this.geometries.push(marked);
+      const marker = new THREE.Mesh(marked, teeMarkerMat);
+      marker.position.set(hole.tee[0] + dx, 0.18, hole.tee[1] - 0.9);
+      marker.castShadow = true;
+      this.group.add(marker);
+      const knobGeo = new THREE.SphereGeometry(0.075, 8, 6);
+      const knobPainted = paintFaces(
+        knobGeo,
         (_cx, _cy, _cz, _ny, out) => {
           out.setHex(PALETTE.coral);
           return out;
         },
-        0.05,
+        0.04,
       );
-      this.geometries.push(marked);
-      const marker = new THREE.Mesh(marked, teeMarkerMat);
-      marker.position.set(hole.tee[0] + dx, 0.16, hole.tee[1] - 0.9);
-      marker.castShadow = true;
-      this.group.add(marker);
+      this.geometries.push(knobPainted);
+      const knob = new THREE.Mesh(knobPainted, teeMarkerMat);
+      knob.position.set(hole.tee[0] + dx, 0.37, hole.tee[1] - 0.9);
+      knob.castShadow = true;
+      this.group.add(knob);
     });
 
     // 컵 + 깃발
@@ -753,6 +830,9 @@ export class Course {
     const hole = this.spec;
     const rand = seeded(1000 + hole.index * 137);
     const fairwayWidth = hole.fairwayWidth;
+    const waterZones = (hole.zones ?? []).filter((zone) => zone.kind === 'water');
+    const onLand = (x: number, z: number): boolean =>
+      !waterZones.some((zone) => ((x - zone.x) / (zone.rx * 1.04)) ** 2 + ((z - zone.z) / (zone.rz * 1.04)) ** 2 <= 1);
 
     // 카트 길: 페어웨이 한쪽 옆을 따라가는 좁은 흙길
     const side = hole.index % 2 === 0 ? 1 : -1;
@@ -761,25 +841,16 @@ export class Course {
     );
     if (cartLine.length > 6) {
       const cartMat = this.groundMaterial(0.98, false);
-      const cartGeo = extrudedGround(
-        corridorPolygon(cartLine, 0.85),
-        [],
-        0.05,
-      );
       const cartPath = this.addGround(
-        cartGeo,
+        corridorGrid(cartLine, 0.85, 3, onLand),
         cartMat,
-        (cx, cy, cz, ny, out) => {
-          if (ny <= 0.6) {
-            out.setHex(cy > -0.03 ? PALETTE.sandDark : PALETTE.soil);
-            return out;
-          }
+        (cx, _cy, cz, _ny, out) => {
           out.setHex(noise2(Math.floor(cx * 1.2), Math.floor(cz * 1.2)) > 0.5 ? PALETTE.sand : PALETTE.sandDark);
           return out;
         },
-        0.06,
+        0.05,
       );
-      cartPath.position.y = 0.017;
+      cartPath.position.y = 0.02;
     }
 
     // 야드지 말뚝 2개 (페어웨이 바깥)
@@ -840,6 +911,19 @@ export class Course {
       this.group.add(rock);
     }
 
+    // 티박스 옆 소품: 가로등 · 골프백 거치대
+    const teeSide = hole.index % 2 === 0 ? 1 : -1;
+    const lamp = createLamp(1);
+    lamp.position.set(hole.tee[0] + 7.6 * teeSide, 0, hole.tee[1] + 3.4);
+    lamp.rotation.y = teeSide > 0 ? -0.4 : 0.4;
+    this.group.add(lamp);
+    if (hole.index !== 0) {
+      const bag = createBagStand(1);
+      bag.position.set(hole.tee[0] - 6.6 * teeSide, 0, hole.tee[1] + 3.2);
+      bag.rotation.y = teeSide > 0 ? 0.5 : -0.5;
+      this.group.add(bag);
+    }
+
     // 홀별 랜드마크
     if (hole.index === 0) {
       const gazebo = createGazebo(1);
@@ -854,6 +938,10 @@ export class Course {
       bag.position.set(-4.6, 0, 33.4);
       bag.rotation.y = 0.3;
       this.group.add(bag);
+      const wall = createStoneWall(6.5, 1);
+      wall.position.set(-10.2, 0, -8.5);
+      wall.rotation.y = 0.22;
+      this.group.add(wall);
     } else if (hole.index === 1) {
       const pond = (hole.zones ?? []).find((zone) => zone.kind === 'water');
       if (pond) {
@@ -870,10 +958,14 @@ export class Course {
       cart.position.set(9.6, 0, 16.5);
       cart.rotation.y = 0.7;
       this.group.add(cart);
+      const wall = createStoneWall(7, 1);
+      wall.position.set(9.4, 0, -18.5);
+      wall.rotation.y = -0.3;
+      this.group.add(wall);
     } else {
-      const windmill = createWindmill(0.95);
-      windmill.position.set(14.6, APRON_Y, -40.5);
-      windmill.rotation.y = -0.4;
+      const windmill = createWindmill(1.25);
+      windmill.position.set(19.0, APRON_Y, -46.0);
+      windmill.rotation.y = -0.35;
       this.group.add(windmill);
       const wall = createStoneWall(7, 1);
       wall.position.set(-9.8, 0, -30.5);
@@ -883,6 +975,21 @@ export class Course {
       bench.position.set(8.2, 0, 20.5);
       bench.rotation.y = 0.8;
       this.group.add(bench);
+    }
+
+    // 원경 숲 — 섬 밖 들판을 둘러싼 나무 띠
+    const centerX = (hole.tee[0] + hole.green.x) / 2;
+    const centerZ = (hole.tee[1] + hole.green.z) / 2;
+    for (let i = 0; i < 44; i += 1) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 62 + rand() * 34;
+      const x = centerX + Math.cos(angle) * radius;
+      const z = centerZ + Math.sin(angle) * radius;
+      if (this.contains(x, z)) continue;
+      const tree = i % 3 === 0 ? createPine(1.7 + rand() * 1.4) : createTree(1.6 + rand() * 1.3);
+      tree.position.set(x, APRON_Y, z);
+      tree.rotation.y = rand() * Math.PI * 2;
+      this.group.add(tree);
     }
 
     // 페어웨이에서 먼 쪽 울타리 (섬 밖)

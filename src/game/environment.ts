@@ -12,7 +12,7 @@ export function applyRendererLook(renderer: THREE.WebGLRenderer): void {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.06;
+  renderer.toneMappingExposure = 1.0;
 }
 
 export interface SkyOptions {
@@ -81,12 +81,12 @@ export function buildSky(scene: THREE.Scene, options: SkyOptions = {}): SkyHandl
   // 원경 언덕/숲 실루엣
   if (options.hills !== false) {
     const hillMat = new THREE.MeshStandardMaterial({ color: 0x4f8f52, roughness: 1, flatShading: true });
-    for (let i = 0; i < 18; i += 1) {
-      const angle = (i / 18) * Math.PI * 2 + Math.random() * 0.2;
-      const distance = 96 + Math.random() * 26;
-      const size = 16 + Math.random() * 16;
-      const hill = new THREE.Mesh(new THREE.ConeGeometry(size, size * 0.5, 7), hillMat);
-      hill.position.set(Math.cos(angle) * distance, -8 + Math.random() * 3, Math.sin(angle) * distance);
+    for (let i = 0; i < 26; i += 1) {
+      const angle = (i / 26) * Math.PI * 2 + Math.random() * 0.25;
+      const distance = 88 + Math.random() * 34;
+      const size = 16 + Math.random() * 18;
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(size, size * 0.62, 7), hillMat);
+      hill.position.set(Math.cos(angle) * distance, -3 + Math.random() * 2.5, Math.sin(angle) * distance);
       hill.rotation.y = Math.random() * Math.PI;
       hill.receiveShadow = false;
       group.add(hill);

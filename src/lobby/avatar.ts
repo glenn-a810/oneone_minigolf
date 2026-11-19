@@ -6,8 +6,8 @@ import { PALETTE, blob, buildProp, column, lump, plank, type PropPart } from '..
 const SKIN = 0xffdfb8;
 const SKIN_DARK = 0xe9bc90;
 const INK = 0x243238;
-const TROUSER = 0x36485c;
-const TROUSER_DARK = 0x2a3949;
+const TROUSER = 0xc2ab7d;
+const TROUSER_DARK = 0xa08a60;
 
 /** 클럽 종류 — 홀드한 채의 헤드 모양이 달라진다 */
 export type ClubLook = 'driver' | 'iron' | 'putter';
@@ -200,10 +200,10 @@ export class Golfer {
     this.root.add(this.footL, this.footR);
 
     // 팔 (어깨를 축으로 스윙)
-    this.armL.position.set(-0.255, 1.34, 0);
-    this.armR.position.set(0.255, 1.34, 0);
-    this.armL.rotation.z = 0.16;
-    this.armR.rotation.z = -0.16;
+    this.armL.position.set(-0.245, 1.45, 0);
+    this.armR.position.set(0.245, 1.45, 0);
+    this.armL.rotation.z = 0.2;
+    this.armR.rotation.z = -0.2;
     this.armL.add(buildProp(`golfer-arm-left-${hex.toString(16)}`, buildArm(shirt, true)));
     this.armR.add(buildProp(`golfer-arm-right-${hex.toString(16)}`, buildArm(shirt, false)));
     this.root.add(this.armL, this.armR);
@@ -398,125 +398,124 @@ export class Golfer {
 function buildBody(shirt: number): PropPart[] {
   const parts: PropPart[] = [];
 
-  // 바지 다리
-  [-0.115, 0.115].forEach((x) => {
-    parts.push({ geo: column(0.088, 0.1, 0.44, 6), color: TROUSER, pos: [x, 0.68, 0], jitter: 0.05, shade: 0.18 });
-    parts.push({ geo: column(0.076, 0.088, 0.42, 6), color: TROUSER, pos: [x, 0.3, 0], jitter: 0.05, shade: 0.18 });
-    parts.push({ geo: column(0.092, 0.092, 0.07, 6), color: TROUSER_DARK, pos: [x, 0.14, 0], jitter: 0.04 });
-    // 무릎 접힘
-    parts.push({ geo: column(0.094, 0.094, 0.035, 6), color: TROUSER_DARK, pos: [x, 0.49, 0], jitter: 0.03 });
+  // 바지 다리 (긴 다리 + 무릎 접힘 + 밑단)
+  [-0.125, 0.125].forEach((x) => {
+    parts.push({ geo: column(0.086, 0.098, 0.46, 6), color: TROUSER, pos: [x, 0.71, 0], jitter: 0.05, shade: 0.2 });
+    parts.push({ geo: column(0.074, 0.086, 0.4, 6), color: TROUSER, pos: [x, 0.32, 0], jitter: 0.05, shade: 0.2 });
+    parts.push({ geo: column(0.09, 0.09, 0.07, 6), color: TROUSER_DARK, pos: [x, 0.15, 0], jitter: 0.04 });
+    parts.push({ geo: column(0.092, 0.092, 0.03, 6), color: TROUSER_DARK, pos: [x, 0.52, 0], jitter: 0.03 });
   });
 
-  // 골반 + 벨트
-  parts.push({ geo: plank(0.34, 0.2, 0.24), color: TROUSER, pos: [0, 0.92, 0], jitter: 0.05 });
-  parts.push({ geo: plank(0.36, 0.07, 0.26), color: 0x2b1f18, pos: [0, 1.0, 0], jitter: 0.04 });
-  parts.push({ geo: plank(0.09, 0.08, 0.03), color: PALETTE.gold, pos: [0, 1.0, 0.13], bucket: 'metal', jitter: 0.03 });
+  // 골반 + 벨트 + 버클
+  parts.push({ geo: plank(0.32, 0.2, 0.22), color: TROUSER, pos: [0, 0.95, 0], jitter: 0.05 });
+  parts.push({ geo: plank(0.34, 0.065, 0.24), color: 0x2b1f18, pos: [0, 1.035, 0], jitter: 0.04 });
+  parts.push({ geo: plank(0.08, 0.07, 0.02), color: PALETTE.gold, pos: [0, 1.035, 0.125], bucket: 'metal', jitter: 0.03 });
 
-  // 셔츠 몸통 (육각 기둥 — 앞면이 평평하게)
+  // 셔츠 몸통 (육각 기둥 — 앞면이 평평하다)
   parts.push({
-    geo: column(0.215, 0.245, 0.48, 6),
+    geo: column(0.19, 0.168, 0.46, 6),
     color: shirt,
-    pos: [0, 1.24, 0],
+    pos: [0, 1.28, 0],
     rot: [0, Math.PI / 6, 0],
     jitter: 0.06,
     shade: 0.2,
   });
-  // 셔츠 밑단
   parts.push({
-    geo: column(0.25, 0.255, 0.06, 6),
+    geo: column(0.174, 0.176, 0.05, 6),
     color: shirt,
-    pos: [0, 1.01, 0],
+    pos: [0, 1.06, 0],
     rot: [0, Math.PI / 6, 0],
-    jitter: 0.04,
+    jitter: 0.03,
   });
-  // 가슴 주머니 자리 + 단추 여밈
-  parts.push({ geo: plank(0.05, 0.3, 0.03), color: 0xffffff, pos: [0, 1.28, 0.2], jitter: 0.03 });
+  // 여밈 단추 + 주머니
+  parts.push({ geo: plank(0.045, 0.3, 0.03), color: 0xffffff, pos: [0, 1.3, 0.175], jitter: 0.02 });
   [1.18, 1.28, 1.38].forEach((y) => {
-    parts.push({ geo: lump(0.022), color: PALETTE.cream, pos: [0.03, y, 0.215], jitter: 0.02 });
+    parts.push({ geo: lump(0.018), color: PALETTE.cream, pos: [0.025, y, 0.19], jitter: 0.02 });
   });
-  // 어깨 패드
-  parts.push({ geo: column(0.11, 0.12, 0.1, 6), color: shirt, pos: [-0.24, 1.4, 0], jitter: 0.05 });
-  parts.push({ geo: column(0.11, 0.12, 0.1, 6), color: shirt, pos: [0.24, 1.4, 0], jitter: 0.05 });
+  parts.push({ geo: plank(0.1, 0.1, 0.02), color: shirt, pos: [-0.1, 1.32, 0.172], jitter: 0.03 });
+
+  // 어깨
+  parts.push({ geo: column(0.098, 0.104, 0.11, 6), color: shirt, pos: [-0.215, 1.45, 0], jitter: 0.05 });
+  parts.push({ geo: column(0.098, 0.104, 0.11, 6), color: shirt, pos: [0.215, 1.45, 0], jitter: 0.05 });
+
   // 카라
-  parts.push({ geo: column(0.115, 0.135, 0.08, 6), color: 0xffffff, pos: [0, 1.47, 0], rot: [0, Math.PI / 6, 0], jitter: 0.03 });
-  parts.push({ geo: plank(0.12, 0.06, 0.12), color: 0xffffff, pos: [0, 1.45, 0.12], rot: [0.3, 0, 0], jitter: 0.03 });
+  parts.push({ geo: column(0.092, 0.112, 0.07, 6), color: 0xffffff, pos: [0, 1.53, 0], rot: [0, Math.PI / 6, 0], jitter: 0.03 });
+  parts.push({ geo: plank(0.11, 0.05, 0.1), color: 0xffffff, pos: [0, 1.52, 0.1], rot: [0.32, 0, 0], jitter: 0.03 });
 
   // 목
-  parts.push({ geo: column(0.072, 0.082, 0.12, 6), color: SKIN_DARK, pos: [0, 1.5, 0], jitter: 0.03 });
+  parts.push({ geo: column(0.062, 0.072, 0.1, 6), color: SKIN_DARK, pos: [0, 1.57, 0], jitter: 0.03 });
 
-  // 머리 (각진 두상 + 턱)
-  parts.push({ geo: plank(0.26, 0.24, 0.25), color: SKIN, pos: [0, 1.64, 0], jitter: 0.04, shade: 0.12 });
-  parts.push({ geo: plank(0.22, 0.08, 0.22), color: SKIN_DARK, pos: [0, 1.52, 0.005], jitter: 0.03 });
-  parts.push({ geo: plank(0.06, 0.07, 0.05), color: SKIN, pos: [0, 1.6, 0.135], jitter: 0.03 });
-  [-0.14, 0.14].forEach((x) => {
-    parts.push({ geo: plank(0.035, 0.09, 0.07), color: SKIN_DARK, pos: [x, 1.63, 0], jitter: 0.03 });
-    // 눈 + 눈썹
-    parts.push({ geo: plank(0.045, 0.055, 0.02), color: INK, pos: [x * 0.42, 1.665, 0.126], jitter: 0.02 });
-    parts.push({ geo: plank(0.065, 0.018, 0.025), color: 0x3b2a20, pos: [x * 0.42, 1.708, 0.126], jitter: 0.02 });
+  // 머리 (각진 두상 + 턱 + 이목구비)
+  parts.push({ geo: plank(0.23, 0.25, 0.23), color: SKIN, pos: [0, 1.72, 0], jitter: 0.04, shade: 0.12 });
+  parts.push({ geo: plank(0.2, 0.06, 0.2), color: SKIN_DARK, pos: [0, 1.6, 0.005], jitter: 0.03 });
+  parts.push({ geo: plank(0.055, 0.06, 0.05), color: SKIN, pos: [0, 1.69, 0.125], jitter: 0.03 });
+  [-0.12, 0.12].forEach((x) => {
+    parts.push({ geo: plank(0.03, 0.08, 0.06), color: SKIN_DARK, pos: [x, 1.71, 0], jitter: 0.03 });
+    parts.push({ geo: plank(0.04, 0.05, 0.02), color: INK, pos: [x * 0.42, 1.745, 0.118], jitter: 0.02 });
+    parts.push({ geo: plank(0.06, 0.016, 0.025), color: 0x3b2a20, pos: [x * 0.42, 1.785, 0.118], jitter: 0.02 });
   });
-  parts.push({ geo: plank(0.06, 0.014, 0.02), color: 0x8a5f52, pos: [0, 1.555, 0.126], jitter: 0.02 });
-  // 헤어 (모자 밖으로 나온 옆·뒷머리)
-  parts.push({ geo: plank(0.26, 0.06, 0.26), color: 0x4a3527, pos: [0, 1.74, -0.01], jitter: 0.05 });
-  parts.push({ geo: plank(0.26, 0.1, 0.05), color: 0x4a3527, pos: [0, 1.66, -0.13], jitter: 0.05 });
+  parts.push({ geo: plank(0.055, 0.012, 0.02), color: 0x8a5f52, pos: [0, 1.625, 0.118], jitter: 0.02 });
+  // 뒷머리
+  parts.push({ geo: plank(0.235, 0.14, 0.07), color: 0x4a3527, pos: [0, 1.72, -0.095], jitter: 0.05 });
 
-  // 바이저 모자 (챙 + 크라운 + 밴드)
-  parts.push({ geo: column(0.152, 0.158, 0.13, 6), color: 0xffffff, pos: [0, 1.82, -0.01], rot: [0, Math.PI / 6, 0], jitter: 0.04 });
-  parts.push({ geo: column(0.16, 0.162, 0.04, 6), color: shirt, pos: [0, 1.765, -0.01], rot: [0, Math.PI / 6, 0], jitter: 0.03 });
-  parts.push({ geo: plank(0.3, 0.03, 0.2), color: 0xffffff, pos: [0, 1.762, 0.16], rot: [-0.14, 0, 0], jitter: 0.03 });
-  parts.push({ geo: lump(0.032), color: shirt, pos: [0, 1.89, -0.01], jitter: 0.02 });
+  // 바이저 모자 (크라운 + 색 밴드 + 챙 + 단추)
+  parts.push({ geo: column(0.126, 0.132, 0.1, 6), color: 0xffffff, pos: [0, 1.88, -0.01], rot: [0, Math.PI / 6, 0], jitter: 0.04 });
+  parts.push({ geo: column(0.136, 0.138, 0.035, 6), color: shirt, pos: [0, 1.828, -0.01], rot: [0, Math.PI / 6, 0], jitter: 0.03 });
+  parts.push({ geo: plank(0.27, 0.028, 0.16), color: 0xffffff, pos: [0, 1.822, 0.145], rot: [-0.13, 0, 0], jitter: 0.03 });
+  parts.push({ geo: lump(0.026), color: shirt, pos: [0, 1.94, -0.01], jitter: 0.02 });
 
   return parts;
 }
 
 function buildShoe(): PropPart[] {
   return [
-    { geo: plank(0.135, 0.05, 0.3), color: PALETTE.creamDark, pos: [0, -0.05, 0.02], jitter: 0.03 },
-    { geo: plank(0.125, 0.09, 0.24), color: 0xffffff, pos: [0, 0.0, -0.01], jitter: 0.04 },
-    { geo: plank(0.115, 0.07, 0.1), color: 0xffffff, pos: [0, -0.015, 0.13], jitter: 0.04 },
-    { geo: plank(0.09, 0.02, 0.07), color: PALETTE.metalDark, pos: [0, 0.045, 0.06], jitter: 0.02 },
-    { geo: column(0.062, 0.068, 0.05, 6), color: PALETTE.cream, pos: [0, 0.07, -0.02], jitter: 0.03 },
+    { geo: plank(0.15, 0.05, 0.34), color: PALETTE.creamDark, pos: [0, -0.05, 0.02], jitter: 0.03 },
+    { geo: plank(0.14, 0.1, 0.27), color: 0xffffff, pos: [0, 0.0, -0.01], jitter: 0.04 },
+    { geo: plank(0.13, 0.075, 0.11), color: 0xffffff, pos: [0, -0.02, 0.15], jitter: 0.04 },
+    { geo: plank(0.1, 0.02, 0.08), color: PALETTE.metalDark, pos: [0, 0.05, 0.07], jitter: 0.02 },
+    { geo: column(0.07, 0.076, 0.06, 6), color: PALETTE.cream, pos: [0, 0.075, -0.02], jitter: 0.03 },
   ];
 }
 
 function buildArm(shirt: number, left: boolean): PropPart[] {
   const parts: PropPart[] = [
-    { geo: column(0.078, 0.088, 0.2, 6), color: shirt, pos: [0, -0.1, 0], jitter: 0.05, shade: 0.18 },
-    { geo: column(0.09, 0.09, 0.045, 6), color: 0xffffff, pos: [0, -0.21, 0], jitter: 0.03 },
-    { geo: column(0.058, 0.066, 0.16, 6), color: SKIN, pos: [0, -0.31, 0], jitter: 0.04 },
-    { geo: column(0.052, 0.058, 0.17, 6), color: SKIN, pos: [0, -0.45, 0], jitter: 0.04 },
-    { geo: column(0.062, 0.062, 0.03, 6), color: 0xffffff, pos: [0, -0.535, 0], jitter: 0.02 },
-    { geo: plank(0.085, 0.11, 0.09), color: left ? PALETTE.cream : SKIN, pos: [0, -0.6, 0.01], jitter: 0.03 },
+    { geo: column(0.072, 0.082, 0.22, 6), color: shirt, pos: [0, -0.11, 0], jitter: 0.05, shade: 0.18 },
+    { geo: column(0.084, 0.084, 0.04, 6), color: 0xffffff, pos: [0, -0.235, 0], jitter: 0.03 },
+    { geo: column(0.05, 0.058, 0.18, 6), color: SKIN, pos: [0, -0.34, 0], jitter: 0.04 },
+    { geo: column(0.045, 0.051, 0.17, 6), color: SKIN, pos: [0, -0.51, 0], jitter: 0.04 },
+    { geo: column(0.055, 0.055, 0.03, 6), color: 0xffffff, pos: [0, -0.595, 0], jitter: 0.02 },
+    { geo: plank(0.075, 0.1, 0.085), color: left ? PALETTE.cream : SKIN, pos: [0, -0.66, 0.01], jitter: 0.03 },
   ];
   return parts;
 }
 
 function buildShaft(): PropPart[] {
   return [
-    { geo: column(0.019, 0.019, 0.17, 6), color: 0x2b3138, pos: [0, -0.56, 0.02], rot: [0.1, 0, 0], jitter: 0.03 },
-    { geo: column(0.013, 0.016, 0.62, 6), color: PALETTE.metal, pos: [0, -0.93, 0.12], rot: [0.24, 0, 0], bucket: 'metal', jitter: 0.03 },
-    { geo: column(0.017, 0.02, 0.06, 6), color: PALETTE.metalDark, pos: [0, -1.19, 0.2], rot: [0.24, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: column(0.019, 0.019, 0.17, 6), color: 0x2b3138, pos: [0, -0.62, 0.02], rot: [0.1, 0, 0], jitter: 0.03 },
+    { geo: column(0.013, 0.016, 0.62, 6), color: PALETTE.metal, pos: [0, -0.99, 0.13], rot: [0.24, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: column(0.017, 0.02, 0.06, 6), color: PALETTE.metalDark, pos: [0, -1.25, 0.21], rot: [0.24, 0, 0], bucket: 'metal', jitter: 0.03 },
   ];
 }
 
 function buildClubHead(look: ClubLook): PropPart[] {
   if (look === 'driver') {
     return [
-      { geo: plank(0.19, 0.11, 0.15), color: 0x3a4652, pos: [0, -1.23, 0.235], rot: [0.2, 0.1, 0], jitter: 0.05 },
-      { geo: plank(0.2, 0.03, 0.15), color: PALETTE.metal, pos: [0, -1.28, 0.235], rot: [0.2, 0.1, 0], bucket: 'metal', jitter: 0.03 },
-      { geo: plank(0.06, 0.04, 0.09), color: PALETTE.coral, pos: [0.09, -1.215, 0.2], jitter: 0.03 },
+      { geo: plank(0.19, 0.11, 0.15), color: 0x3a4652, pos: [0, -1.29, 0.245], rot: [0.2, 0.1, 0], jitter: 0.05 },
+      { geo: plank(0.2, 0.03, 0.15), color: PALETTE.metal, pos: [0, -1.34, 0.245], rot: [0.2, 0.1, 0], bucket: 'metal', jitter: 0.03 },
+      { geo: plank(0.06, 0.04, 0.09), color: PALETTE.coral, pos: [0.09, -1.275, 0.21], jitter: 0.03 },
     ];
   }
   if (look === 'putter') {
     return [
-      { geo: plank(0.2, 0.05, 0.1), color: 0x3a4652, pos: [0, -1.235, 0.215], rot: [0.1, 0, 0], jitter: 0.04 },
-      { geo: plank(0.16, 0.015, 0.09), color: PALETTE.cream, pos: [0, -1.26, 0.215], jitter: 0.03 },
-      { geo: plank(0.03, 0.1, 0.03), color: PALETTE.metalDark, pos: [0, -1.2, 0.19], bucket: 'metal', jitter: 0.02 },
+      { geo: plank(0.2, 0.05, 0.1), color: 0x3a4652, pos: [0, -1.295, 0.225], rot: [0.1, 0, 0], jitter: 0.04 },
+      { geo: plank(0.16, 0.015, 0.09), color: PALETTE.cream, pos: [0, -1.32, 0.225], jitter: 0.03 },
+      { geo: plank(0.03, 0.1, 0.03), color: PALETTE.metalDark, pos: [0, -1.26, 0.2], bucket: 'metal', jitter: 0.02 },
     ];
   }
   return [
-    { geo: plank(0.13, 0.1, 0.03), color: PALETTE.metal, pos: [0, -1.235, 0.215], rot: [0.28, 0, 0], bucket: 'metal', jitter: 0.03 },
-    { geo: plank(0.11, 0.04, 0.05), color: PALETTE.metalDark, pos: [0, -1.29, 0.225], rot: [0.28, 0, 0], bucket: 'metal', jitter: 0.03 },
-    { geo: lump(0.03), color: PALETTE.metalDark, pos: [0, -1.19, 0.2], bucket: 'metal', jitter: 0.02 },
+    { geo: plank(0.13, 0.1, 0.03), color: PALETTE.metal, pos: [0, -1.295, 0.225], rot: [0.28, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: plank(0.11, 0.04, 0.05), color: PALETTE.metalDark, pos: [0, -1.35, 0.235], rot: [0.28, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: lump(0.03), color: PALETTE.metalDark, pos: [0, -1.25, 0.21], bucket: 'metal', jitter: 0.02 },
   ];
 }
 

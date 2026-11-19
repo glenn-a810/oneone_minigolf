@@ -174,7 +174,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   fieldGeo.rotateX(-Math.PI / 2);
   const fieldPainted = paintFaces(
     fieldGeo,
-    (cx, _cy, cz, _ny, out) => turf(noise2(Math.floor(cx * 0.25), Math.floor(cz * 0.25)) > 0.5 ? PALETTE.rough : PALETTE.roughDark, cx, cz, out),
+    (cx, _cy, cz, _ny, out) => turf(noise2(Math.floor(cx * 0.25), Math.floor(cz * 0.25)) > 0.5 ? PALETTE.meadow : PALETTE.meadowDark, cx, cz, out),
     0.07,
   );
   const field = new THREE.Mesh(
@@ -352,10 +352,10 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
 
   // 클럽하우스 앞 소품: 카트·골프백·파라솔
   const cart = createGolfCart(1);
-  cart.position.set(-4.6, 0, 8.4);
-  cart.rotation.y = 0.8;
+  cart.position.set(-12.4, 0, -4.8);
+  cart.rotation.y = 1.15;
   root.add(cart);
-  obstacles.push({ x: -4.6, z: 8.4, r: 1.35 });
+  obstacles.push({ x: -12.4, z: -4.8, r: 1.35 });
 
   const bag = createBagStand(1);
   bag.position.set(-5.6, 0, 5.4);
@@ -364,10 +364,10 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   obstacles.push({ x: -5.6, z: 5.4, r: 0.5 });
 
   const patio = createPatioSet(1);
-  patio.position.set(-3.2, 0, 11.2);
+  patio.position.set(-9.4, 0, 10.4);
   patio.rotation.y = -0.3;
   root.add(patio);
-  obstacles.push({ x: -3.2, z: 11.2, r: 1.2 });
+  obstacles.push({ x: -9.4, z: 10.4, r: 1.2 });
 
   // ---------------------------------------------------------------- 벤치 · 가로등 · 꽃밭
 
@@ -428,11 +428,11 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
     [12.6, -1.2, 1.15, true],
     [-7.2, -10.4, 1.0, false],
     [8.2, -11.2, 0.95, true],
-    [1.8, 12.0, 1.1, false],
+    [-1.4, 13.4, 1.05, false],
     [-2.8, -12.6, 0.9, true],
     [12.8, -8.4, 1.15, false],
     [-13.2, 3.4, 0.85, true],
-    [4.2, 10.6, 0.9, false],
+    [7.6, 11.6, 0.95, false],
     [-9.6, 10.8, 1.0, true],
   ];
   treeSpots.forEach(([x, z, s, pine]) => {

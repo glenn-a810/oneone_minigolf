@@ -269,9 +269,11 @@ export function createGolfCart(scale = 1): THREE.Group {
     { geo: plank(1.36, 0.42, 1.5), color: PALETTE.cream, pos: [0, 0.82, -0.06], jitter: 0.05 },
     { geo: plank(1.3, 0.18, 0.12), color: PALETTE.coral, pos: [0, 0.72, 0.78], jitter: 0.04 },
     { geo: plank(1.5, 0.16, 0.16), color: PALETTE.creamDark, pos: [0, 0.42, 1.14], jitter: 0.04 },
-    { geo: plank(1.16, 0.16, 0.56), color: PALETTE.dark, pos: [0, 1.06, -0.18], jitter: 0.06 },
-    { geo: plank(1.16, 0.52, 0.16), color: PALETTE.dark, pos: [0, 1.3, -0.52], rot: [-0.2, 0, 0], jitter: 0.06 },
-    { geo: plank(1.4, 0.14, 0.5), color: PALETTE.cream, pos: [0, 0.9, 0.62], rot: [0.1, 0, 0], jitter: 0.05 },
+    { geo: plank(1.16, 0.16, 0.56), color: 0x4a5b66, pos: [0, 1.06, -0.18], jitter: 0.06 },
+    { geo: plank(1.16, 0.52, 0.16), color: 0x3f4f59, pos: [0, 1.3, -0.52], rot: [-0.2, 0, 0], jitter: 0.06 },
+    { geo: plank(1.26, 0.62, 0.05), color: PALETTE.glass, pos: [0, 1.42, 0.52], rot: [0.16, 0, 0], jitter: 0.03 },
+    { geo: plank(1.34, 0.06, 0.08), color: PALETTE.creamDark, pos: [0, 1.72, 0.48], jitter: 0.03 },
+    { geo: plank(1.34, 0.06, 0.08), color: PALETTE.creamDark, pos: [0, 1.12, 0.56], jitter: 0.03 },
     { geo: column(0.05, 0.05, 1.0, 5), color: PALETTE.creamDark, pos: [0.58, 1.5, 0.5], rot: [0.3, 0, 0], jitter: 0.04 },
     { geo: column(0.16, 0.16, 0.06, 8), color: PALETTE.dark, pos: [0.58, 1.98, 0.36], rot: [1.1, 0, 0], jitter: 0.04 },
     { geo: plank(1.6, 0.12, 2.0), color: PALETTE.cream, pos: [0, 2.16, -0.1], jitter: 0.05 },
@@ -392,32 +394,48 @@ export function createGazebo(scale = 1): THREE.Group {
 /** 풍차: 홀 랜드마크 */
 export function createWindmill(scale = 1): THREE.Group {
   const parts: PropPart[] = [
-    { geo: new THREE.CylinderGeometry(2.5, 2.7, 0.4, 8), color: PALETTE.stoneDark, pos: [0, 0.2, 0], jitter: 0.06 },
-    { geo: new THREE.CylinderGeometry(1.5, 2.35, 5.6, 8), color: PALETTE.cream, pos: [0, 3.2, 0], jitter: 0.06, shade: 0.24 },
-    { geo: new THREE.CylinderGeometry(1.56, 1.6, 0.22, 8), color: PALETTE.stoneDark, pos: [0, 2.3, 0], jitter: 0.04 },
-    { geo: new THREE.CylinderGeometry(1.44, 1.48, 0.2, 8), color: PALETTE.stoneDark, pos: [0, 4.4, 0], jitter: 0.04 },
-    { geo: new THREE.ConeGeometry(1.85, 1.5, 8), color: PALETTE.roof, pos: [0, 6.75, 0], jitter: 0.08, shade: 0.2 },
-    { geo: plank(0.9, 1.7, 0.16), color: PALETTE.woodDark, pos: [0, 0.95, 2.3], jitter: 0.05 },
-    { geo: plank(0.9, 0.16, 0.2), color: PALETTE.creamDark, pos: [0, 2.1, 2.28], jitter: 0.04 },
-    { geo: plank(0.6, 0.7, 0.14), color: PALETTE.glass, pos: [0, 4.1, 1.5], jitter: 0.03 },
-    { geo: plank(0.68, 0.78, 0.08), color: PALETTE.woodDark, pos: [0, 4.1, 1.46], jitter: 0.03 },
-    { geo: column(0.2, 0.2, 1.2, 6), color: PALETTE.woodDark, pos: [0, 6.1, 1.5], rot: [Math.PI / 2, 0, 0], jitter: 0.04 },
+    { geo: new THREE.CylinderGeometry(2.2, 2.5, 0.4, 8), color: PALETTE.stoneDark, pos: [0, 0.2, 0], jitter: 0.06 },
+    { geo: new THREE.CylinderGeometry(1.35, 2.05, 4.6, 8), color: PALETTE.cream, pos: [0, 2.7, 0], jitter: 0.06, shade: 0.24 },
+    { geo: new THREE.CylinderGeometry(1.45, 1.5, 0.18, 8), color: PALETTE.stoneDark, pos: [0, 1.9, 0], jitter: 0.04 },
+    { geo: new THREE.CylinderGeometry(1.38, 1.42, 0.18, 8), color: PALETTE.stoneDark, pos: [0, 3.7, 0], jitter: 0.04 },
+    { geo: new THREE.ConeGeometry(1.7, 1.15, 8), color: PALETTE.roof, pos: [0, 5.55, 0], jitter: 0.08, shade: 0.2 },
+    { geo: plank(0.85, 1.6, 0.16), color: PALETTE.woodDark, pos: [0, 0.85, 2.0], jitter: 0.05 },
+    { geo: plank(0.95, 0.14, 0.2), color: PALETTE.creamDark, pos: [0, 1.9, 1.98], jitter: 0.04 },
+    { geo: plank(0.5, 0.62, 0.14), color: PALETTE.glass, pos: [0, 4.1, 1.32], jitter: 0.03 },
+    { geo: plank(0.58, 0.7, 0.1), color: PALETTE.woodDark, pos: [0, 4.1, 1.28], jitter: 0.03 },
+    { geo: column(0.2, 0.2, 1.0, 6), color: PALETTE.woodDark, pos: [0, 5.05, 1.3], rot: [Math.PI / 2, 0, 0], jitter: 0.04 },
+    { geo: column(0.3, 0.3, 0.4, 8), color: PALETTE.woodDark, pos: [0, 5.05, 1.35], rot: [Math.PI / 2, 0, 0], jitter: 0.04 },
   ];
-  // 날개 4장
+  // 날개 4장 — 가는 살대 + 가로대
   for (let i = 0; i < 4; i += 1) {
     const angle = (i / 4) * Math.PI * 2;
-    const cx = Math.cos(angle) * 1.9;
-    const cy = Math.sin(angle) * 1.9;
-    parts.push({ geo: plank(0.16, 3.4, 0.1), color: PALETTE.woodLight, pos: [cx, 6.1 + cy, 1.55], rot: [0, 0, -angle], jitter: 0.06 });
+    const cx = Math.cos(angle) * 1.85;
+    const cy = Math.sin(angle) * 1.85;
     parts.push({
-      geo: plank(0.9, 2.4, 0.05),
+      geo: plank(0.13, 3.6, 0.09),
+      color: PALETTE.woodLight,
+      pos: [cx, 5.05 + cy, 1.38],
+      rot: [0, 0, -angle],
+      jitter: 0.05,
+    });
+    for (let k = 0; k < 3; k += 1) {
+      const t = 0.55 + k * 0.85;
+      parts.push({
+        geo: plank(0.62, 0.06, 0.07),
+        color: PALETTE.cream,
+        pos: [cx + Math.cos(angle + Math.PI / 2) * 0.34 * (k === 1 ? -1 : 1), 5.05 + cy + Math.sin(angle + Math.PI / 2) * 0.34 * (k === 1 ? -1 : 1), 1.4 - t * 0.0],
+        rot: [0, 0, -angle],
+        jitter: 0.04,
+      });
+    }
+    parts.push({
+      geo: plank(0.9, 2.9, 0.05),
       color: PALETTE.cream,
-      pos: [cx + Math.cos(angle + Math.PI / 2) * 0.5, 6.1 + cy + Math.sin(angle + Math.PI / 2) * 0.5, 1.6],
+      pos: [cx + Math.cos(angle + Math.PI / 2) * 0.5, 5.05 + cy + Math.sin(angle + Math.PI / 2) * 0.5, 1.42],
       rot: [0, 0, -angle],
       jitter: 0.05,
     });
   }
-  parts.push({ geo: column(0.26, 0.26, 0.42, 8), color: PALETTE.woodDark, pos: [0, 6.1, 1.6], rot: [Math.PI / 2, 0, 0], jitter: 0.04 });
 
   const group = buildProp('windmill', parts);
   group.scale.setScalar(scale);
@@ -522,48 +540,52 @@ export function createClubhouse(): THREE.Group {
   parts.push({ geo: plank(8.44, 0.12, 0.1), color: PALETTE.woodDark, pos: [0, 1.6, 2.72], jitter: 0.04 });
   parts.push({ geo: plank(8.44, 0.12, 0.1), color: PALETTE.woodDark, pos: [0, 1.6, -2.72], jitter: 0.04 });
 
-  // 박공지붕 (두 장의 경사판 + 용마루 + 처마)
-  const slopeAngle = 0.36;
+  // 박공지붕 (두 장의 경사판 + 용마루 + 계단식 박공벽)
+  const slopeAngle = 0.5;
   [1, -1].forEach((dir) => {
     parts.push({
-      geo: plank(5.6, 0.26, 7.2),
+      geo: plank(5.4, 0.26, 6.9),
       color: PALETTE.roof,
-      pos: [dir * 2.6, 4.28, 0],
+      pos: [dir * 2.35, 4.58, 0],
       rot: [0, 0, dir * slopeAngle],
       jitter: 0.08,
       shade: 0.18,
     });
     parts.push({
-      geo: plank(5.8, 0.12, 7.4),
+      geo: plank(5.5, 0.12, 7.0),
       color: PALETTE.roofDark,
-      pos: [dir * 2.62, 4.14, 0],
+      pos: [dir * 2.37, 4.44, 0],
       rot: [0, 0, dir * slopeAngle],
       jitter: 0.05,
     });
   });
-  parts.push({ geo: plank(0.34, 0.3, 7.4), color: PALETTE.roofDark, pos: [0, 5.2, 0], jitter: 0.05 });
-  // 박공 벽 (삼각형 대신 계단식 판재)
-  parts.push({ geo: plank(2.0, 0.5, 0.24), color: PALETTE.cream, pos: [0, 3.5, 2.62], jitter: 0.05 });
-  parts.push({ geo: plank(1.2, 0.5, 0.24), color: PALETTE.cream, pos: [0, 3.95, 2.62], jitter: 0.05 });
-  parts.push({ geo: plank(2.0, 0.5, 0.24), color: PALETTE.cream, pos: [0, 3.5, -2.62], jitter: 0.05 });
-  parts.push({ geo: plank(1.2, 0.5, 0.24), color: PALETTE.cream, pos: [0, 3.95, -2.62], jitter: 0.05 });
+  parts.push({ geo: plank(0.36, 0.3, 7.1), color: PALETTE.roofDark, pos: [0, 5.94, 0], jitter: 0.05 });
+  // 박공 벽 (계단식 판재로 삼각형을 채운다)
+  [1, -1].forEach((side) => {
+    parts.push({ geo: plank(5.6, 0.5, 0.22), color: PALETTE.cream, pos: [0, 3.55, side * 2.72], jitter: 0.05 });
+    parts.push({ geo: plank(4.2, 0.5, 0.22), color: PALETTE.cream, pos: [0, 4.05, side * 2.72], jitter: 0.05 });
+    parts.push({ geo: plank(2.7, 0.5, 0.22), color: PALETTE.cream, pos: [0, 4.55, side * 2.72], jitter: 0.05 });
+    parts.push({ geo: plank(1.3, 0.5, 0.22), color: PALETTE.cream, pos: [0, 5.05, side * 2.72], jitter: 0.05 });
+    parts.push({ geo: plank(0.4, 0.45, 0.22), color: PALETTE.cream, pos: [0, 5.52, side * 2.72], jitter: 0.05 });
+  });
 
-  // 현관 포치
-  parts.push({ geo: plank(7.4, 0.22, 2.3), color: PALETTE.wood, pos: [0, 0.5, 3.6], jitter: 0.06 });
-  parts.push({ geo: plank(7.8, 0.24, 2.6), color: PALETTE.roof, pos: [0, 3.34, 3.5], rot: [-0.12, 0, 0], jitter: 0.07 });
-  parts.push({ geo: plank(7.9, 0.1, 2.7), color: PALETTE.roofDark, pos: [0, 3.2, 3.5], rot: [-0.12, 0, 0], jitter: 0.05 });
-  [-3.0, -1.0, 1.0, 3.0].forEach((x) => {
-    parts.push({ geo: plank(0.2, 2.7, 0.2), color: PALETTE.woodDark, pos: [x, 1.85, 4.55], jitter: 0.05 });
-    parts.push({ geo: plank(0.3, 0.14, 0.3), color: PALETTE.stoneLight, pos: [x, 0.54, 4.55], jitter: 0.04 });
+  // 현관 포치 (지붕·천장·기둥·난간)
+  parts.push({ geo: plank(7.4, 0.22, 2.2), color: PALETTE.wood, pos: [0, 0.5, 3.55], jitter: 0.06 });
+  parts.push({ geo: plank(7.6, 0.2, 2.0), color: PALETTE.roof, pos: [0, 3.24, 3.4], rot: [-0.1, 0, 0], jitter: 0.07 });
+  parts.push({ geo: plank(7.7, 0.08, 2.06), color: PALETTE.roofDark, pos: [0, 3.12, 3.4], rot: [-0.1, 0, 0], jitter: 0.05 });
+  parts.push({ geo: plank(7.3, 0.1, 1.9), color: PALETTE.cream, pos: [0, 3.02, 3.32], jitter: 0.04 });
+  [-2.9, -1.0, 1.0, 2.9].forEach((x) => {
+    parts.push({ geo: plank(0.18, 2.5, 0.18), color: PALETTE.woodDark, pos: [x, 1.75, 4.35], jitter: 0.05 });
+    parts.push({ geo: plank(0.28, 0.14, 0.28), color: PALETTE.stoneLight, pos: [x, 0.54, 4.35], jitter: 0.04 });
   });
   // 포치 난간
   [-2.0, 2.0].forEach((x) => {
-    parts.push({ geo: plank(1.8, 0.12, 0.12), color: PALETTE.woodLight, pos: [x, 1.0, 4.55], jitter: 0.05 });
-    parts.push({ geo: plank(1.8, 0.1, 0.1), color: PALETTE.wood, pos: [x, 0.72, 4.55], jitter: 0.05 });
+    parts.push({ geo: plank(1.6, 0.12, 0.12), color: PALETTE.woodLight, pos: [x, 1.0, 4.35], jitter: 0.05 });
+    parts.push({ geo: plank(1.6, 0.1, 0.1), color: PALETTE.wood, pos: [x, 0.72, 4.35], jitter: 0.05 });
   });
   // 계단
-  parts.push({ geo: plank(2.6, 0.14, 0.5), color: PALETTE.stone, pos: [0, 0.2, 4.95], jitter: 0.05 });
-  parts.push({ geo: plank(3.0, 0.14, 0.5), color: PALETTE.stoneDark, pos: [0, 0.07, 5.35], jitter: 0.05 });
+  parts.push({ geo: plank(2.6, 0.14, 0.5), color: PALETTE.stone, pos: [0, 0.2, 4.75], jitter: 0.05 });
+  parts.push({ geo: plank(3.0, 0.14, 0.5), color: PALETTE.stoneDark, pos: [0, 0.07, 5.15], jitter: 0.05 });
 
   // 문
   parts.push({ geo: plank(1.5, 2.15, 0.16), color: PALETTE.woodDark, pos: [0, 1.5, 2.72], jitter: 0.05 });

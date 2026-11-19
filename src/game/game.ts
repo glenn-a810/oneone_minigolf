@@ -189,7 +189,7 @@ export class Game {
     this.remotes = new Remotes(this.scene);
 
     // 조준 가이드: 점선 궤적 + 착지 링 + 정지 지점 링
-    const dotGeo = new THREE.SphereGeometry(0.16, 10, 8);
+    const dotGeo = new THREE.SphereGeometry(0.115, 10, 8);
     dotGeo.rotateX(-Math.PI / 2);
     for (let i = 0; i < AIM_DOT_COUNT; i += 1) {
       const dot = new THREE.Mesh(dotGeo, aimDotMaterial);
@@ -1342,6 +1342,13 @@ export class Game {
   debugPreview(): TrajectoryPreview | null {
     this.refreshPreview(true);
     return this.preview;
+  }
+
+  /** 검증용: 지정한 홀로 바로 이동 */
+  debugJump(index: number): void {
+    if (!this.identity) return;
+    this.viewMode = 'back';
+    this.startHole(index, true);
   }
 
   /** 검증용: 스윙 게이지를 직접 조작 */
