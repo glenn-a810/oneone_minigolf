@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#bfe6ff" />
+    <meta
+      name="description"
+      content="원온 미니골프 — 3D 대기실에서 이모지로 인사하고, 플레이룸에서 타이밍 스윙으로 3홀 라운드를 즐겨요. 로그인 없이 닉네임만 정하면 끝."
+    />
+    <title>원온 미니골프 · ONEOINE CLUBHOUSE</title>
+    <script type="module" crossorigin src="./assets/index-BuymWLP1.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DiMIBtxq.css">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene" aria-label="원온 클럽하우스 3D 대기실"></canvas>
+
+      <!-- 플레이룸(미니골프) HUD -->
+      <div id="hud" class="hud hidden">
+        <div class="hud-top">
+          <div class="hole-card">
+            <div class="hole-card-head">
+              <span id="hole-no">1홀</span>
+              <span id="hole-par" class="par">Par 4</span>
+            </div>
+            <p id="hole-name" class="hole-name">퍼스트 드라이브</p>
+            <p id="hole-hint" class="hole-hint"></p>
+            <p class="hole-dist"><span id="hole-dist">0.0</span>m 남음</p>
+          </div>
+          <div class="hud-actions">
+            <span class="net-chip" data-net="play" data-state="waiting" title="실시간 연결 상태">🟡 연결 중</span>
+            <div class="me-chip">
+              <i id="me-dot" class="dot"></i>
+              <span id="me-name">플레이어</span>
+            </div>
+            <button
+              id="btn-view"
+              class="icon-btn view-btn"
+              type="button"
+              title="뷰 전환 (V)"
+              aria-label="뷰 전환"
+            >
+              🔭<span id="view-label">백뷰</span>
+            </button>
+            <button id="btn-lobby" class="icon-btn home" type="button" title="대기실로" aria-label="대기실로">
+              🏠
+            </button>
+            <button id="btn-sound" class="icon-btn" type="button" title="소리 켜기/끄기" aria-label="소리 켜기/끄기">
+              🔊
+            </button>
+            <button id="btn-help" class="icon-btn" type="button" title="플레이 가이드" aria-label="플레이 가이드">?</button>
+          </div>
+        </div>
+
+        <div id="players" class="players"></div>
+
+        <div class="hud-bottom">
+          <div class="shot-panel">
+            <div class="shot-head">
+              <div class="stroke-box">
+                <span id="stroke-count">0</span>
+                <small>타</small>
+              </div>
+              <div class="shot-meta">
+                <span id="shot-dist" class="shot-dist">0m</span>
+                <span id="shot-lie" class="lie-tag">페어웨이</span>
+                <span id="shot-club" class="club-tag">1W</span>
+              </div>
+            </div>
+
+            <div class="shot-range">
+              <span class="range-item">🎯 남은 <b id="range-target">0.0m</b></span>
+              <span class="range-item">최대 <b id="range-max">0.0m</b> <em id="range-club">1W</em></span>
+            </div>
+
+            <div id="gauge" class="gauge" role="meter" aria-label="스윙 파워/임팩트 게이지">
+              <div class="gauge-bands">
+                <span class="band good"></span>
+                <span class="band perfect"></span>
+              </div>
+              <div id="gauge-fill" class="gauge-fill"></div>
+              <div id="gauge-power" class="gauge-power"></div>
+              <div id="gauge-target" class="gauge-target"><i></i></div>
+              <div id="gauge-marker" class="gauge-marker"></div>
+            </div>
+            <div class="gauge-live">
+              <span class="live-power"><b id="live-power">0%</b><span class="sep">·</span><span id="live-dist">0.0m</span></span>
+              <span id="live-goal" class="live-goal">🎯 목표 0%</span>
+            </div>
+            <p id="gauge-hint" class="gauge-hint">스윙! 을 꾹 누르면 파워가 차요</p>
+
+            <div id="clubs" class="club-row" role="group" aria-label="클럽 선택"></div>
+          </div>
+
+          <div class="shot-controls">
+            <button id="btn-aim-left" class="aim-btn" type="button" aria-label="왼쪽으로 조준">◀</button>
+            <button id="btn-swing" class="swing-btn" type="button">
+              <span id="swing-label">스윙!</span>
+              <small id="swing-sub">꾹 눌러 파워</small>
+            </button>
+            <button id="btn-aim-right" class="aim-btn" type="button" aria-label="오른쪽으로 조준">▶</button>
+          </div>
+
+          <div class="emoji-bar" id="emoji-bar">
+            <button type="button" data-emoji="👏" aria-label="박수">👏</button>
+            <button type="button" data-emoji="🔥" aria-label="불꽃">🔥</button>
+            <button type="button" data-emoji="⛳" aria-label="깃발">⛳</button>
+            <button type="button" data-emoji="😂" aria-label="웃김">😂</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 대기실(로비) HUD -->
+      <div id="lobby-hud" class="hud lobby-hud hidden">
+        <div class="hud-top">
+          <div class="lobby-card">
+            <span class="lobby-badge">🏛️</span>
+            <div class="lobby-card-text">
+              <p class="lobby-title">원온 클럽하우스</p>
+              <p class="lobby-sub" id="lobby-count">대기실 1명 · 플레이룸 0명</p>
+            </div>
+          </div>
+          <div class="hud-actions">
+            <span class="net-chip" data-net="lobby" data-state="waiting" title="실시간 연결 상태">🟡 연결 중</span>
+            <div class="me-chip">
+              <i id="lobby-me-dot" class="dot"></i>
+              <span id="lobby-me-name">플레이어</span>
+            </div>
+            <button
+              id="btn-lobby-sound"
+              class="icon-btn"
+              type="button"
+              title="소리 켜기/끄기"
+              aria-label="소리 켜기/끄기"
+            >
+              🔊
+            </button>
+            <button id="btn-lobby-help" class="icon-btn" type="button" title="조작법" aria-label="조작법">?</button>
+          </div>
+        </div>
+
+        <div id="lobby-players" class="players lobby-players"></div>
+
+        <div class="lobby-bottom">
+          <button id="btn-gate" class="gate-btn hidden" type="button">플레이룸 입장 ⛳</button>
+          <p class="lobby-hint" id="lobby-hint">
+            <b>WASD·방향키</b> 또는 <b>바닥을 눌러</b> 이동 · 모바일은 화면을 드래그
+          </p>
+          <div class="emoji-bar wide" id="lobby-emoji-bar">
+            <button type="button" data-lobby-emoji="👋" aria-label="손 흔들기">👋</button>
+            <button type="button" data-lobby-emoji="⛳" aria-label="골프">⛳</button>
+            <button type="button" data-lobby-emoji="🔥" aria-label="불꽃">🔥</button>
+            <button type="button" data-lobby-emoji="👏" aria-label="박수">👏</button>
+            <button type="button" data-lobby-emoji="😂" aria-label="웃김">😂</button>
+            <button type="button" data-lobby-emoji="🎉" aria-label="축하">🎉</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 홀/성적 배너 -->
+      <div id="banner" class="banner hidden" aria-live="polite">
+        <h2 id="banner-title">홀인원!</h2>
+        <p id="banner-sub"></p>
+      </div>
+
+      <div id="toast" class="toast hidden" aria-live="polite"></div>
+      <div id="fade" class="fade"></div>
+
+      <!-- 입장 화면 -->
+      <div id="entry" class="overlay entry">
+        <div class="entry-card">
+          <div class="brand">
+            <div class="brand-mark">🏛️</div>
+            <div class="brand-text">
+              <p class="brand-eyebrow">ONEOINE CLUBHOUSE</p>
+              <h1>원온 미니골프</h1>
+              <p>3D 대기실에서 만나고, 플레이룸에서 3홀 타이밍 스윙 라운드</p>
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="field-label">닉네임</span>
+            <div class="nick-row">
+              <input
+                id="nickname"
+                type="text"
+                maxlength="12"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="닉네임"
+              />
+              <button id="btn-dice" class="ghost-btn dice" type="button" title="랜덤 닉네임">🎲</button>
+            </div>
+          </label>
+
+          <div class="field">
+            <span class="field-label">캐릭터 색상</span>
+            <div id="colors" class="colors"></div>
+          </div>
+
+          <button id="btn-teeoff" class="primary-btn" type="button">대기실 입장 🚪</button>
+          <p class="entry-note">
+            대기실에서 <b>이모지</b>로 인사하고, 광장 끝 <b>플레이룸 게이트</b>로 들어가면 3홀 라운드가 시작돼요.<br />
+            플레이룸에서는 <b>스윙 버튼을 꾹 눌러 파워를 채운 뒤 떼고</b>, <b>임팩트 타이밍에 한 번 탭</b>하면 골프 스윙이 됩니다.
+          </p>
+        </div>
+      </div>
+
+      <!-- 스코어카드 -->
+      <div id="scorecard" class="overlay hidden">
+        <div class="card score-card">
+          <p class="eyebrow">ROUND RESULT</p>
+          <h2 id="score-title">라운드 결과</h2>
+          <p id="score-sub" class="sub"></p>
+
+          <table class="score-table">
+            <thead>
+              <tr>
+                <th>홀</th>
+                <th>Par</th>
+                <th>타수</th>
+                <th>성적</th>
+              </tr>
+            </thead>
+            <tbody id="score-body"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2">합계</td>
+                <td id="score-total">0</td>
+                <td id="score-verdict">+0</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <button id="btn-back-lobby" class="primary-btn lobby-return" type="button">🏠 대기실로 돌아가기</button>
+          <div class="btn-row">
+            <button id="btn-again" class="ghost-btn" type="button">다시 치기</button>
+            <button id="btn-copy" class="ghost-btn" type="button">기록 복사하기</button>
+          </div>
+          <p id="copy-hint" class="copy-hint"></p>
+        </div>
+      </div>
+
+      <!-- 플레이룸 첫 입장 가이드 (3단계) -->
+      <div id="onboarding" class="overlay hidden">
+        <div class="card onb-card">
+          <div class="onb-head">
+            <p class="eyebrow">PLAYROOM GUIDE</p>
+            <h2>플레이룸 3단계</h2>
+            <p class="onb-sub">조준 → 클럽 확인 → 꾹 눌러 파워 · 떼고 타이밍 탭. 처음 입장할 때 한 번만 보여드려요.</p>
+          </div>
+
+          <div class="onb-steps">
+            <section class="onb-step" data-step="1">
+              <span class="onb-badge">①</span>
+              <div>
+                <p class="onb-title">방향을 맞추고 뷰 전환으로 착지 지점 확인</p>
+                <p class="onb-text">
+                  화면을 <b>좌우 드래그</b>하거나 <b>◀ ▶</b> 버튼으로 방향을 잡으면 바닥에
+                  <b>점선 궤적</b>과 <b>착지 링</b>이 나타나요.<br />
+                  우상단 <b>🔭 뷰 전환</b>으로 <b>백뷰 → 타겟뷰(착지 지점·그린 상공) → 탑뷰(코스 전체)</b>를 돌려보면
+                  그린·벙커·연못까지 한눈에 보여 파워를 가늠하기 좋아요.
+                </p>
+              </div>
+            </section>
+
+            <section class="onb-step" data-step="2">
+              <span class="onb-badge">②</span>
+              <div>
+                <p class="onb-title">남은 거리에 맞춰 자동 선택된 추천 골프채</p>
+                <p class="onb-text">
+                  거리와 지형(티·페어웨이·러프·벙커·그린)에 맞는 클럽이 자동으로 잡히고 클럽 버튼에
+                  <b class="onb-tag">추천</b> 뱃지가 붙어요. 예) 벙커면 <b>SW</b>, 그린이면 <b>PT</b>.<br />
+                  실제 골프처럼 <b>1W·3W·5I·7I·9I·PW·SW·PT</b> 8개 번호별 클럽 중 원하는 걸로 바꿀 수 있어요.
+                </p>
+              </div>
+            </section>
+
+            <section class="onb-step" data-step="3">
+              <span class="onb-badge">③</span>
+              <div>
+                <p class="onb-title">꾹 눌러 파워 → 떼고 → 타이밍 탭</p>
+                <p class="onb-text">
+                  <b>스윙!</b> 버튼(또는 게이지)을 <b>꾹 누르고 있으면</b> 파워 게이지가 차오르고, 100%에 닿으면 다시 내려와요.
+                  원하는 파워에서 <b>손을 떼면</b> 그 지점이 파워로 확정됩니다.<br />
+                  이어서 게이지가 중앙 <b>임팩트 존</b>으로 돌아올 때 <b>한 번 탭</b>하면 정확도가 정해지며 샷!
+                  게이지 위 <b>🎯 목표 마커</b>가 핀까지 필요한 파워 위치를 알려주고, 누르고 있는 동안
+                  <b>68% · 34.0m</b>처럼 예상 비거리가 실시간으로 표시돼요.
+                </p>
+              </div>
+            </section>
+          </div>
+
+          <div class="onb-foot">
+            <div id="onb-dots" class="onb-dots">
+              <i class="on"></i><i></i><i></i>
+            </div>
+            <div class="onb-btns">
+              <button id="btn-onb-back" class="ghost-btn" type="button">이전</button>
+              <button id="btn-onb-next" class="primary-btn" type="button">다음</button>
+            </div>
+          </div>
+          <div class="onb-links">
+            <button id="btn-onb-help" class="link-btn" type="button">전체 조작법 보기</button>
+            <button id="btn-onb-skip" class="link-btn" type="button">건너뛰기</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 도움말 -->
+      <div id="help" class="overlay hidden">
+        <div class="card help-card">
+          <h2>조작법</h2>
+          <ul class="help-list">
+            <li><b>대기실 이동</b> — <b>WASD</b>·<b>방향키</b>, 바닥을 <b>클릭/탭</b>하면 그쪽으로 걸어가요. 모바일은 화면을 <b>드래그</b>하면 조이스틱이 나타납니다.</li>
+            <li><b>이모지</b> — 아래 이모지 바(👋⛳🔥👏😂🎉)를 누르면 내 캐릭터 위에 말풍선이 떠요. 채팅 없이 감정만 주고받아요.</li>
+            <li><b>플레이룸</b> — 광장 끝 <b>빛나는 게이트</b>로 걸어 들어가면 3홀 라운드가 시작됩니다. 게임 중 🏠 버튼으로 대기실에 돌아올 수 있어요.</li>
+            <li><b>조준 & 뷰 전환</b> — <b>◀ ▶</b>·<b>A/D</b>·화면 좌우 드래그로 방향을 돌립니다. 바닥의 <b>점선 궤적</b>이 예상 탄도와 착지점을 보여줘요. 우상단 <b>🔭 뷰 전환</b>(또는 <b>V</b> 키)으로 <b>백뷰 → 타겟뷰(착지 지점·그린 상공) → 탑뷰(코스 전체)</b>를 오갑니다.</li>
+            <li><b>스윙(꾹 누르고 떼기)</b> — <b>스윙!</b> 버튼이나 게이지를 <b>꾹 누르고 있으면</b> 파워 게이지가 차오르고(100%에 닿으면 다시 내려와 왕복), <b>떼는 순간</b> 그 지점의 파워로 확정됩니다. 이어 게이지가 왼쪽 <b>임팩트 존</b>으로 돌아올 때 <b>한 번 탭</b>하면 정확도가 정해지며 샷! 존 한가운데를 맞추면 Perfect, 어긋나면 훅/슬라이스가 납니다. <b>스페이스바</b>도 <b>누르고 있다 떼면</b> 같은 방식으로 칠 수 있어요.</li>
+            <li><b>거리 & 파워</b> — HUD에 <b>핀까지 남은 거리</b>와 선택 클럽의 <b>최대 비거리(100%)</b>가 표시되고, 누르고 있는 동안 <b>현재 파워 %와 예상 비거리</b>, 그리고 핀까지 필요한 파워 위치에 <b>🎯 목표 마커</b>가 나옵니다.</li>
+            <li><b>클럽</b> — 남은 거리·지형에 맞는 클럽이 자동 선택되고 <b>추천</b> 뱃지가 붙어요. <b>1W·3W·5I·7I·9I·PW·SW·PT</b> 8개 번호별 클럽을 직접 고를 수도 있습니다. 그린은 <b>PT(퍼터)</b>로 굴리고, 벙커는 <b>SW</b>로 탈출해요. 러프·벙커에서는 비거리가 줄어요.</li>
+            <li><b>샷 후</b> — 골퍼는 친 자리에 서서 공만 날아가는 걸 지켜보고, 공이 멈추면 새 공 옆으로 걸어가 어드레스 자세를 잡습니다.</li>
+            <li><b>함께하기</b> — 같은 브라우저에서 탭을 여러 개 열면 대기실 위치·이모지·플레이룸 이동이 실시간으로 동기화돼요.</li>
+          </ul>
+          <p class="help-note">워터 해저드에 빠지면 마지막 샷 위치로 돌아가고 1벌타가 붙습니다. <b>R</b> 공 되돌리기(+1벌타), <b>M</b> 소리, <b>H</b> 도움말.</p>
+          <button id="btn-help-close" class="primary-btn" type="button">알겠어요</button>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>
