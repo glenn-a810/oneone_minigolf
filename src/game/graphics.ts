@@ -9,7 +9,7 @@ import {
   type SurfaceKind,
 } from './pbr';
 import { realVariantFor } from './props';
-import { ensureBoxUv } from './geo';
+import { CREASE_REAL, ensureBoxUv, roundedGeometry, smoothNormals } from './geo';
 
 /**
  * 그래픽 룩(스타일) 전환 — 두 가지를 실시간으로 비교한다.
@@ -305,11 +305,23 @@ function applyLook(root: THREE.Object3D): void {
         }
         return;
       }
+      if (mesh.userData.realRound === true && !mesh.userData.syntyRoundGeometry) {
+        const rounded = roundedGeometry(mesh.geometry, true);
+        smoothNormals(rounded, CREASE_REAL);
+        mesh.userData.syntyRoundGeometry = mesh.geometry;
+        mesh.geometry = rounded;
+      }
       swapMeshToReal(mesh);
     } else {
       if (mesh.userData.lookHidden) {
         mesh.visible = true;
         delete mesh.userData.lookHidden;
+      }
+      const round = mesh.userData.syntyRoundGeometry as THREE.BufferGeometry | undefined;
+      if (round) {
+        mesh.geometry.dispose();
+        mesh.geometry = round;
+        delete mesh.userData.syntyRoundGeometry;
       }
       restoreMeshToSynty(mesh);
     }

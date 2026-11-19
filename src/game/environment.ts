@@ -79,9 +79,12 @@ export function buildSky(scene: THREE.Scene, options: SkyOptions = {}): SkyHandl
     clouds.push({ sprite, angle, radius: distance, speed: 0.006 + Math.random() * 0.008, y });
   }
 
-  // 원경 언덕/숲 실루엣
+  // 원경 언덕/숲 실루엣 — 폴리는 7각 봉우리, 실사는 같은 자리를 둥근 능선으로 바꾼다
   if (options.hills !== false) {
-    const hillMat = markGround(new THREE.MeshStandardMaterial({ color: 0x4f8f52, roughness: 1, flatShading: true }));
+    const hillMat = markGround(
+      new THREE.MeshStandardMaterial({ color: 0x4f8f52, roughness: 1, flatShading: true }),
+      'turf',
+    );
     for (let i = 0; i < 26; i += 1) {
       const angle = (i / 26) * Math.PI * 2 + Math.random() * 0.25;
       const distance = 88 + Math.random() * 34;
@@ -90,6 +93,7 @@ export function buildSky(scene: THREE.Scene, options: SkyOptions = {}): SkyHandl
       hill.position.set(Math.cos(angle) * distance, -3 + Math.random() * 2.5, Math.sin(angle) * distance);
       hill.rotation.y = Math.random() * Math.PI;
       hill.receiveShadow = false;
+      hill.userData.realRound = true;
       group.add(hill);
     }
   }
