@@ -323,7 +323,8 @@ function applyLook(root: THREE.Object3D): void {
         return;
       }
       if (mesh.userData.realRound === true && !mesh.userData.syntyRoundGeometry) {
-        const rounded = smoothNormals(roundedGeometry(mesh.geometry, true), CREASE_REAL);
+        // 유기적 변위는 꼭짓점이 갈라져 틈이 생기므로 여기서는 모양만 둥글게 한다
+        const rounded = smoothNormals(roundedGeometry(mesh.geometry, false), CREASE_REAL);
         mesh.userData.syntyRoundGeometry = mesh.geometry;
         mesh.geometry = rounded;
       }
