@@ -296,7 +296,7 @@ body {
   background: rgba(255, 255, 255, 0.95);
 }
 
-/* 그래픽 룩 토글 (Synty 폴리 ↔ 카툰) — 홀 카드 아래, 플레이어 목록(우측)과 겹치지 않는 좌측 */
+/* 그래픽 룩 토글 (Synty 폴리 ↔ 실사 PBR) — 홀 카드 아래, 플레이어 목록(우측)과 겹치지 않는 좌측 */
 .look-switch {
   pointer-events: auto;
   align-self: flex-start;
@@ -341,8 +341,8 @@ body {
   color: #fff;
 }
 
-.look-switch button[data-look='toon'][aria-pressed='true'] {
-  background: linear-gradient(135deg, #2f7fbf, #6a4bb0);
+.look-switch button[data-look='real'][aria-pressed='true'] {
+  background: linear-gradient(135deg, #2f8f5b, #1f6f8b);
   color: #fff;
 }
 

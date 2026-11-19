@@ -1,37 +1,46 @@
 import * as THREE from 'three';
-import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
+import {
+  createSurfaceMaterial,
+  createWaterMaterial,
+  ensureEnvironment,
+  getEnvironmentTexture,
+  prewarmSurfaces,
+  updateWaterTime,
+  type SurfaceKind,
+} from './pbr';
+import { realVariantFor } from './props';
 
 /**
  * 그래픽 룩(스타일) 전환 — 두 가지를 실시간으로 비교한다.
  *
- * - `synty` : Synty POLYGON 스타일. 각진 플랫 셰이딩 + 면 단위 정점 색 (기본값)
- * - `toon`  : 실사 조명·그림자 위에 셀 셰이딩·림라이트·외곽선을 얹은 스타일라이즈드 3D 카툰
+ * - `synty` : Synty POLYGON 스타일. 각진 로우폴리 + 플랫 셰이딩 + 면 단위 정점 색 (기본값)
+ * - `real`  : 실사형식(Realistic PBR). 둥글고 고분할된 메시 + 절차적 PBR 텍스처
+ *             (map·normalMap·roughnessMap) + 환경 반사(IBL) + 실사 조명
  *
  * 토글 한 번에 페이지를 새로고침하지 않고 장면 전체를 바꾼다.
- * 씬의 메시를 직접 다시 만들지 않고 ① 매터리얼 교체 ② 매끈한 버텍스 노멀 지오메트리 교체
- * ③ 외곽선 패스(화면 공간) 만 수행하므로 홀을 바꾸거나 새 골퍼가 들어와도 그대로 따라온다.
+ * 씬을 다시 만들지 않고 ① 매터리얼 교체 ② 실사용 메시 그룹 표시/숨김 ③ 환경맵·조명 배분
+ * 만 수행하므로 홀을 바꾸거나 새 골퍼가 들어와도 그대로 따라온다.
  */
 
-export type GraphicLook = 'synty' | 'toon';
+export type GraphicLook = 'synty' | 'real';
 
 export const LOOK_LABEL: Record<GraphicLook, string> = {
   synty: '폴리',
-  toon: '카툰',
+  real: '실사',
 };
 
-const LOOK_KEY = 'oneone:look:v1';
-/** 카툰 매터리얼 표식 */
-const TOON_FLAG = 'oneoneToon';
-/** 매끈 노멀 지오메트리 캐시 키 (원본 지오메트리의 userData) */
-const SMOOTH_KEY = 'oneoneSmooth';
-/** 면 사이 각도가 이보다 크면(=꺾이면) 노멀을 섞지 않는다 (45°) */
-const CREASE_COS = Math.cos((45 * Math.PI) / 180);
+const LOOK_KEY = 'oneone:look:v2';
+/** 실사 매터리얼 표식 */
+const REAL_FLAG = 'oneoneReal';
 
 // ---------------------------------------------------------------- 상태
 
 function readStoredLook(): GraphicLook {
   try {
-    return localStorage.getItem(LOOK_KEY) === 'toon' ? 'toon' : 'synty';
+    const stored = localStorage.getItem(LOOK_KEY);
+    if (stored === 'real') return 'real';
+    if (stored === 'toon') return 'real'; // 이전 '카툰' 선택은 실사 비교로 이어진다
+    return 'synty';
   } catch {
     return 'synty';
   }
@@ -49,13 +58,14 @@ let current: GraphicLook = typeof localStorage === 'undefined' ? 'synty' : readS
 const listeners = new Set<(look: GraphicLook) => void>();
 const scenes = new Set<THREE.Scene>();
 let renderer: THREE.WebGLRenderer | null = null;
+let waterClock = 0;
 
 export function getLook(): GraphicLook {
   return current;
 }
 
-export function isToon(): boolean {
-  return current === 'toon';
+export function isReal(): boolean {
+  return current === 'real';
 }
 
 /** 룩이 바뀌면 호출된다 (UI 동기화용) */
@@ -71,28 +81,34 @@ export function setLook(look: GraphicLook): void {
   }
   current = look;
   storeLook(look);
+  if (look === 'real') ensureEnvironment(renderer);
   syncLook();
   applyLookLights();
+  applyEnvironmentAll();
   applyRendererTone();
   listeners.forEach((listener) => listener(look));
 }
 
-/** 폴리 ↔ 카툰 한 번씩 전환하고 바뀐 룩을 돌려준다 */
+/** 폴리 ↔ 실사 한 번씩 전환하고 바뀐 룩을 돌려준다 */
 export function toggleLook(): GraphicLook {
-  setLook(current === 'toon' ? 'synty' : 'toon');
+  setLook(current === 'real' ? 'synty' : 'real');
   return current;
 }
 
 /** 토글 대상 씬 등록 (플레이룸·대기실) */
 export function registerLookScene(scene: THREE.Scene): void {
   scenes.add(scene);
-  syncLook(scene);
+  applyLook(scene);
+  applyVariantGroups(scene);
+  applyEnvironment(scene);
   applyLookLights();
 }
 
+// ---------------------------------------------------------------- 조명·환경
+
 /**
  * 룩에 맞춰 조명을 다시 배분한다.
- * 카툰 모드에서는 하늘/필 조명을 줄여 셀 단계와 그림자가 또렷해지게 하고,
+ * 실사 모드에서는 환경맵(IBL)이 반사광을 채우므로 하늘광을 조금 줄이고 태양은 그대로 둔다.
  * 폴리 모드로 돌아오면 처음 세팅값으로 정확히 되돌린다.
  */
 function applyLookLights(): void {
@@ -104,317 +120,185 @@ function applyLookLights(): void {
       if (data.baseIntensity === undefined) data.baseIntensity = light.intensity;
       const base = data.baseIntensity;
       let scale = 1;
-      if (current === 'toon') {
-        if ((light as THREE.HemisphereLight).isHemisphereLight) scale = 0.58;
-        else if ((light as THREE.DirectionalLight).isDirectionalLight) scale = light.castShadow ? 1.05 : 0.72;
+      if (current === 'real') {
+        if ((light as THREE.HemisphereLight).isHemisphereLight) scale = 0.72;
+        else if ((light as THREE.DirectionalLight).isDirectionalLight) scale = light.castShadow ? 1.0 : 0.9;
       }
       light.intensity = base * scale;
     });
   });
 }
 
-// ---------------------------------------------------------------- 램프 텍스처
+function applyEnvironment(scene: THREE.Scene): void {
+  if (current === 'real') {
+    scene.environment = getEnvironmentTexture();
+    scene.environmentIntensity = 0.95;
+  } else {
+    scene.environment = null;
+    scene.environmentIntensity = 1;
+  }
+}
 
-let rampCache: THREE.DataTexture | null = null;
+function applyEnvironmentAll(): void {
+  scenes.forEach((scene) => applyEnvironment(scene));
+}
 
-/** 2~3단계 셀 음영용 램프 — 단은 또렷하되 경계는 살짝 부드럽게 */
-function toonRamp(): THREE.DataTexture {
-  if (rampCache) return rampCache;
-  const steps = [0.4, 0.4, 0.66, 0.66, 0.86, 0.86, 1.0, 1.0];
-  const data = new Uint8Array(steps.length * 4);
-  steps.forEach((value, index) => {
-    const byte = Math.round(THREE.MathUtils.clamp(value, 0, 1) * 255);
-    data[index * 4] = byte;
-    data[index * 4 + 1] = byte;
-    data[index * 4 + 2] = byte;
-    data[index * 4 + 3] = 255;
-  });
-  const texture = new THREE.DataTexture(data, steps.length, 1, THREE.RGBAFormat);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-  rampCache = texture;
-  return texture;
+function applyRendererTone(): void {
+  if (!renderer) return;
+  renderer.toneMappingExposure = current === 'real' ? 1.05 : 1.0;
+}
+
+/** 실사 룩의 물결 시간 — 프레임마다 호출해도 안전하다 */
+export function tickLook(dt: number): void {
+  waterClock += dt;
+  updateWaterTime(waterClock);
 }
 
 // ---------------------------------------------------------------- 매터리얼 변환
 
-const toonByBase = new WeakMap<THREE.Material, THREE.Material>();
+const realByBase = new WeakMap<THREE.Material, THREE.Material>();
 
-function isToonMaterial(material: THREE.Material): boolean {
-  return material.userData?.[TOON_FLAG] === true;
+function isRealMaterial(material: THREE.Material): boolean {
+  return material.userData?.[REAL_FLAG] === true;
+}
+
+/** 폴리 소품 버킷 매터리얼인지 (병합된 소품 메시는 실사 모드에서 숨긴다) */
+function isPropBucketMaterial(material: THREE.Material): boolean {
+  return typeof material.userData?.oneonePropBucket === 'string' && !isRealMaterial(material);
 }
 
 /**
- * 지면/물처럼 외곽선을 그리지 않을 매터리얼에 표시한다.
- * (외곽선은 화면 공간 패스라, 표시가 없으면 기본적으로 그려진다)
+ * 지면/물처럼 별도 취급이 필요한 매터리얼에 표시한다.
+ * 표면 종류를 함께 넘기면 실사 룩에서 그 종류의 PBR 텍스처가 붙는다.
  */
-export function markGround<T extends THREE.Material>(material: T): T {
-  material.userData.outlineParameters = { visible: false };
+export function markGround<T extends THREE.Material>(material: T, kind?: SurfaceKind): T {
+  material.userData.oneoneGround = true;
+  if (kind) material.userData.oneoneSurface = kind;
   return material;
 }
 
-/** 이 매터리얼에 외곽선을 그릴지 결정해 userData 에 기록한다 */
-function ensureOutlineParameters(material: THREE.Material): void {
-  if (material.userData?.outlineParameters) return;
-  const lit = (material as THREE.MeshStandardMaterial).isMeshStandardMaterial === true ||
-    isToonMaterial(material);
-  const visible = lit && !material.transparent && material.opacity >= 1;
-  material.userData.outlineParameters = { visible };
+function classifyMaterial(material: THREE.Material): SurfaceKind {
+  const tagged = material.userData?.oneoneSurface as SurfaceKind | undefined;
+  if (tagged) return tagged;
+  const lit = material as THREE.MeshStandardMaterial;
+  if (lit.transparent && (lit.roughness ?? 1) <= 0.22) return 'water';
+  return 'generic';
 }
 
-/** 외곽선 두께·색 (매터리얼별 미세 조정) */
-function outlineFor(base: THREE.Material): { visible: boolean; thickness?: number; color?: number[] } {
-  const marked = base.userData?.outlineParameters;
-  if (marked && marked.visible === false) return { visible: false };
-  return { visible: true, thickness: 0.0022, color: [0.055, 0.085, 0.145] };
+function isWaterMaterial(material: THREE.Material): boolean {
+  return classifyMaterial(material) === 'water';
 }
 
-function supportsToon(base: THREE.Material): boolean {
-  const any = base as THREE.Material & {
-    isMeshStandardMaterial?: boolean;
-    isMeshPhongMaterial?: boolean;
-    isMeshLambertMaterial?: boolean;
-  };
-  if (any.isMeshStandardMaterial || any.isMeshPhongMaterial || any.isMeshLambertMaterial) {
-    // 물·거품·반투명 링은 지금의 광택/투명도를 그대로 두는 편이 자연스럽다
-    return !base.transparent;
-  }
-  return false;
-}
+/** 원본 매터리얼에 대응하는 실사 매터리얼 (없으면 새로 만들어 캐시) */
+function realMaterialFor(base: THREE.Material): THREE.Material {
+  const cached = realByBase.get(base);
+  if (cached) return cached;
 
-/**
- * MeshStandardMaterial → 셀 셰이딩 매터리얼.
- * 램프 텍스처로 단을 만들고, onBeforeCompile 로 하늘빛 프레넬 림라이트를 얹는다.
- */
-function buildToonMaterial(base: THREE.MeshStandardMaterial): THREE.MeshToonMaterial {
-  const material = new THREE.MeshToonMaterial({
-    color: base.color.clone(),
-    map: base.map ?? null,
-    gradientMap: toonRamp(),
-    vertexColors: base.vertexColors === true,
-    side: base.side,
-    fog: base.fog,
-    depthWrite: base.depthWrite,
-    depthTest: base.depthTest,
-    opacity: base.opacity,
-    transparent: base.transparent,
-    emissive: base.emissive ? base.emissive.clone() : new THREE.Color(0x000000),
-    emissiveIntensity: base.emissiveIntensity ?? 1,
-    emissiveMap: base.emissiveMap ?? null,
-  });
-  // 각진 면을 부드러운 곡면으로 — 노멀은 sync 단계에서 매끈하게 다시 계산해 넣는다
-  (material as unknown as { flatShading: boolean }).flatShading = false;
-  material.name = `${base.name || 'mesh'}-toon`;
-  material.userData[TOON_FLAG] = true;
-  material.userData.look = 'toon';
+  const kind = classifyMaterial(base);
+  const std = base as THREE.MeshStandardMaterial;
+  const color = std.color ?? new THREE.Color(0xffffff);
+  const metalLike = (std.metalness ?? 0) >= 0.45;
 
-  const outline = outlineFor(base);
-  material.userData.outlineParameters = { ...outline };
+  const material = isWaterMaterial(base)
+    ? createWaterMaterial({ color: 0x2a6f80, opacity: Math.max(0.4, std.opacity ?? 1) })
+    : createSurfaceMaterial(metalLike ? 'metal' : kind, {
+        color: color,
+        vertexColors: std.vertexColors === true,
+        side: std.side,
+        transparent: std.transparent === true,
+        opacity: std.opacity ?? 1,
+        depthWrite: std.depthWrite ?? true,
+        emissive: std.emissive ? std.emissive.clone() : 0x000000,
+        emissiveIntensity: std.emissiveIntensity ?? 1,
+        keepMap: std.map ?? null,
+        ...(metalLike ? { metalness: Math.max(0.65, std.metalness ?? 0), roughness: std.roughness ?? 0.3 } : {}),
+      });
 
-  const isGround = outline.visible === false;
-  const metal = base.metalness ?? 0;
-  const rimColor = new THREE.Color(metal > 0.45 ? 0xf4f9ff : 0xa9d8ff);
-  const rimStrength = isGround ? 0.1 : metal > 0.45 ? 0.55 : 0.3;
-  const rimPower = metal > 0.45 ? 2.2 : 3.4;
-
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uRimColor = { value: rimColor };
-    shader.uniforms.uRimStrength = { value: rimStrength };
-    shader.uniforms.uRimPower = { value: rimPower };
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        '#include <common>\nuniform vec3 uRimColor;\nuniform float uRimStrength;\nuniform float uRimPower;',
-      )
-      .replace(
-        '#include <opaque_fragment>',
-        [
-          '// 하늘빛 프레넬 림라이트 — 실루엣 가장자리에 하늘 반사광을 얹는다',
-          'float rimFacing = 1.0 - clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 );',
-          'outgoingLight += uRimColor * ( pow( rimFacing, uRimPower ) * uRimStrength );',
-          '#include <opaque_fragment>',
-        ].join('\n'),
-      );
-  };
-  material.customProgramCacheKey = () => 'oneone-toon-rim';
+  realByBase.set(base, material);
   return material;
 }
 
-/** 원본 매터리얼에 대응하는 카툰 매터리얼 (없으면 원본 그대로) */
-export function toonMaterialFor(base: THREE.Material): THREE.Material {
-  if (isToonMaterial(base) || !supportsToon(base)) {
-    ensureOutlineParameters(base);
-    return base;
-  }
-  const cached = toonByBase.get(base);
-  if (cached) return cached;
-  const toon = buildToonMaterial(base as THREE.MeshStandardMaterial);
-  toonByBase.set(base, toon);
-  ensureOutlineParameters(base);
-  return toon;
+function swapMeshToReal(mesh: THREE.Mesh): void {
+  const material = mesh.material as THREE.Material | undefined;
+  if (!material || Array.isArray(material)) return;
+  // 반투명 오버레이(가이드 링·거품·잔물결)와 기본 매터리얼은 폴리 그대로 둔다
+  if ((material as THREE.MeshBasicMaterial).isMeshBasicMaterial) return;
+  if (isRealMaterial(material)) return;
+  if (material.transparent && !isWaterMaterial(material)) return;
+
+  const real = realMaterialFor(material);
+  if (real === material) return;
+  if (mesh.userData.syntyMaterial === undefined) mesh.userData.syntyMaterial = material;
+  mesh.material = real;
 }
 
-// ---------------------------------------------------------------- 매끈한 노멀
+function restoreMeshToSynty(mesh: THREE.Mesh): void {
+  const base = mesh.userData.syntyMaterial as THREE.Material | undefined;
+  if (!base) return;
+  mesh.material = base;
+  delete mesh.userData.syntyMaterial;
+}
 
-const _a = new THREE.Vector3();
-const _b = new THREE.Vector3();
-const _c = new THREE.Vector3();
-const _ab = new THREE.Vector3();
-const _ac = new THREE.Vector3();
-const _face = new THREE.Vector3();
-const _avg = new THREE.Vector3();
-const _e1 = new THREE.Vector3();
-const _e2 = new THREE.Vector3();
-const _corners = [_a, _b, _c];
+/** 소품 그룹(폴리 메시 ↔ 실사 메시) 표시 전환 */
+function applyVariant(group: THREE.Object3D): void {
+  const key = group.userData?.propKey as string | undefined;
+  if (!key) return;
 
-/**
- * 같은 자리의 정점 노멀을 평균 내 곡면을 매끈하게 만든 지오메트리 사본.
- * 45° 이상 꺾이는 모서리(상자 모서리 등)는 그대로 각지게 남긴다.
- */
-export function smoothGeometry(base: THREE.BufferGeometry): THREE.BufferGeometry {
-  const cached = base.userData?.[SMOOTH_KEY] as THREE.BufferGeometry | undefined;
-  if (cached) return cached;
-
-  const geo = base.clone();
-  geo.name = `${base.name || 'geo'}-smooth`;
-  const position = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
-  if (!position || position.count < 3) return geo;
-
-  const count = position.count;
-  const welded = new Int32Array(count);
-  const keyToId = new Map<string, number>();
-  let weldedCount = 0;
-  for (let i = 0; i < count; i += 1) {
-    const key = `${Math.round(position.getX(i) * 1000)},${Math.round(position.getY(i) * 1000)},${Math.round(
-      position.getZ(i) * 1000,
-    )}`;
-    let id = keyToId.get(key);
-    if (id === undefined) {
-      id = weldedCount;
-      weldedCount += 1;
-      keyToId.set(key, id);
-    }
-    welded[i] = id;
-  }
-
-  const faceCount = Math.floor(count / 3);
-  const faceNormals = new Float32Array(faceCount * 3);
-  const accum = new Float32Array(weldedCount * 3);
-
-  for (let f = 0; f < faceCount; f += 1) {
-    const i0 = f * 3;
-    _a.fromBufferAttribute(position, i0);
-    _b.fromBufferAttribute(position, i0 + 1);
-    _c.fromBufferAttribute(position, i0 + 2);
-    _ab.subVectors(_b, _a);
-    _ac.subVectors(_c, _a);
-    _face.crossVectors(_ab, _ac);
-    const area = _face.length();
-    if (area > 1e-12) _face.divideScalar(area);
-    faceNormals[i0] = _face.x;
-    faceNormals[i0 + 1] = _face.y;
-    faceNormals[i0 + 2] = _face.z;
-    // 정점마다 그 모서리에서의 각도로 무게를 준다 (같은 면이 여러 삼각형에 걸쳐도 한 번만 반영)
-    for (let k = 0; k < 3; k += 1) {
-      const current = _corners[k];
-      _e1.subVectors(_corners[(k + 1) % 3], current);
-      _e2.subVectors(_corners[(k + 2) % 3], current);
-      const l1 = _e1.length();
-      const l2 = _e2.length();
-      const weight =
-        l1 > 1e-9 && l2 > 1e-9
-          ? Math.acos(THREE.MathUtils.clamp(_e1.dot(_e2) / (l1 * l2), -1, 1))
-          : 0;
-      const id = welded[i0 + k] * 3;
-      accum[id] += _face.x * weight;
-      accum[id + 1] += _face.y * weight;
-      accum[id + 2] += _face.z * weight;
+  let real = group.userData.realVariant as THREE.Group | undefined;
+  if (current === 'real' && !real) {
+    const built = realVariantFor(key);
+    if (built) {
+      group.add(built);
+      group.userData.realVariant = built;
+      real = built;
     }
   }
+  if (real) real.visible = current === 'real';
 
-  const normals = new Float32Array(count * 3);
-  for (let f = 0; f < faceCount; f += 1) {
-    const i0 = f * 3;
-    _face.set(faceNormals[i0], faceNormals[i0 + 1], faceNormals[i0 + 2]);
-    const faceLength = _face.length();
-    if (faceLength < 1e-9) {
-      for (let k = 0; k < 3; k += 1) {
-        normals[(i0 + k) * 3 + 1] = 1;
-      }
+  for (const child of group.children) {
+    if (real && child === real) continue;
+    const variant = child.userData?.oneoneVariantOf as GraphicLook | undefined;
+    if (variant) {
+      child.visible = variant === current;
       continue;
     }
-    _face.divideScalar(faceLength);
-    for (let k = 0; k < 3; k += 1) {
-      const vertex = i0 + k;
-      const id = welded[vertex] * 3;
-      _avg.set(accum[id], accum[id + 1], accum[id + 2]);
-      if (_avg.lengthSq() < 1e-12) {
-        normals[vertex * 3] = _face.x;
-        normals[vertex * 3 + 1] = _face.y;
-        normals[vertex * 3 + 2] = _face.z;
-        continue;
-      }
-      _avg.normalize();
-      // 모서리(꺾임)면 면 노멀을 그대로 써서 각을 살린다
-      const useAvg = _avg.dot(_face) >= CREASE_COS;
-      const nx = useAvg ? _avg.x : _face.x;
-      const ny = useAvg ? _avg.y : _face.y;
-      const nz = useAvg ? _avg.z : _face.z;
-      normals[vertex * 3] = nx;
-      normals[vertex * 3 + 1] = ny;
-      normals[vertex * 3 + 2] = nz;
-    }
+    // 폴리 메시: 실사 모드에서는 감춘다 (실사 메시가 같은 자리에 서 있다)
+    child.visible = current !== 'real';
   }
-
-  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  geo.userData.toonBase = base;
-  base.userData[SMOOTH_KEY] = geo;
-  return geo;
 }
 
-// ---------------------------------------------------------------- 씬에 적용
-
-function applyToMesh(mesh: THREE.Mesh): void {
-  const material = mesh.material;
-  if (Array.isArray(material) || !material) return;
-
-  if (current === 'toon') {
-    const toon = toonMaterialFor(material);
-    if (toon !== material && mesh.material !== toon) {
-      mesh.userData.syntyMaterial = material;
-      mesh.material = toon;
-    }
-    ensureOutlineParameters(mesh.material as THREE.Material);
-    const geometry = mesh.geometry as THREE.BufferGeometry;
-    if (!mesh.userData.smoothGeometry && isToonMaterial(mesh.material as THREE.Material) && !geometry.userData?.noSmooth) {
-      mesh.userData.syntyGeometry = geometry;
-      mesh.geometry = smoothGeometry(geometry);
-      mesh.userData.smoothGeometry = true;
-    }
-  } else {
-    const base = mesh.userData.syntyMaterial as THREE.Material | undefined;
-    if (base) {
-      mesh.material = base;
-      delete mesh.userData.syntyMaterial;
-    }
-    const geo = mesh.userData.syntyGeometry as THREE.BufferGeometry | undefined;
-    if (geo) {
-      mesh.geometry = geo;
-      delete mesh.userData.syntyGeometry;
-      delete mesh.userData.smoothGeometry;
-    }
-  }
+function applyVariantGroups(root: THREE.Object3D): void {
+  const groups: THREE.Object3D[] = [];
+  root.traverse((object) => {
+    if (object.userData?.propKey) groups.push(object);
+  });
+  groups.forEach(applyVariant);
 }
 
 function applyLook(root: THREE.Object3D): void {
   root.traverse((object) => {
     const mesh = object as THREE.Mesh;
     if (!mesh.isMesh || (mesh as unknown as THREE.Sprite).isSprite) return;
-    applyToMesh(mesh);
+    const material = mesh.material;
+    if (Array.isArray(material) || !material) return;
+
+    if (current === 'real') {
+      // 병합된 폴리 소품 덩어리는 숨기고, 소품별 실사 메시를 보여 준다
+      if (isPropBucketMaterial(material)) {
+        if (mesh.visible) {
+          mesh.userData.lookHidden = true;
+          mesh.visible = false;
+        }
+        return;
+      }
+      swapMeshToReal(mesh);
+    } else {
+      if (mesh.userData.lookHidden) {
+        mesh.visible = true;
+        delete mesh.userData.lookHidden;
+      }
+      restoreMeshToSynty(mesh);
+    }
   });
 }
 
@@ -422,26 +306,26 @@ function applyLook(root: THREE.Object3D): void {
 export function syncLook(root?: THREE.Object3D): void {
   if (root) {
     applyLook(root);
+    applyVariantGroups(root);
     return;
   }
-  scenes.forEach((scene) => applyLook(scene));
+  scenes.forEach((scene) => {
+    applyLook(scene);
+    applyVariantGroups(scene);
+    applyEnvironment(scene);
+  });
 }
 
-/** 지오메트리를 버릴 때(홀 교체) 매끈 노멀 사본도 함께 정리 */
+/** 홀을 버릴 때 룩 시스템이 남긴 표시만 정리한다 (지오메트리는 소유자가 dispose) */
 export function releaseLookGeometry(root: THREE.Object3D): void {
   root.traverse((object) => {
     const mesh = object as THREE.Mesh;
     if (!mesh.isMesh) return;
-    const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
-    const base = geometry?.userData?.toonBase as THREE.BufferGeometry | undefined;
-    if (!geometry || !base) return;
-    geometry.dispose();
-    if (base.userData) delete base.userData[SMOOTH_KEY];
-    if (mesh.userData.smoothGeometry) {
-      mesh.geometry = base;
-      delete mesh.userData.smoothGeometry;
-      delete mesh.userData.syntyGeometry;
+    if (mesh.userData.lookHidden) {
+      mesh.visible = true;
+      delete mesh.userData.lookHidden;
     }
+    delete mesh.userData.syntyMaterial;
   });
 }
 
@@ -449,32 +333,39 @@ export function releaseLookGeometry(root: THREE.Object3D): void {
 
 export interface LookRenderer {
   render(scene: THREE.Scene, camera: THREE.Camera): void;
-  readonly outline: OutlineEffect;
+  /** 실사 텍스처·환경맵을 미리 만들어 전환 순간 끊김을 없앤다 */
+  prewarm(): void;
 }
 
-function applyRendererTone(): void {
-  if (!renderer) return;
-  renderer.toneMappingExposure = current === 'toon' ? 0.98 : 1.0;
-}
-
-/**
- * 룩에 따라 그리는 렌더러.
- * 카툰 모드에서는 화면 공간 외곽선 패스(OutlineEffect)를 함께 그린다.
- */
 export function createLookRenderer(webgl: THREE.WebGLRenderer): LookRenderer {
   renderer = webgl;
-  const outline = new OutlineEffect(webgl, {
-    defaultThickness: 0.0022,
-    defaultColor: [0.055, 0.085, 0.145],
-    defaultAlpha: 1,
-    defaultKeepAlive: true,
-  });
+  if (current === 'real') ensureEnvironment(renderer);
   applyRendererTone();
+  applyLookLights();
+  applyEnvironmentAll();
   return {
-    outline,
     render(scene: THREE.Scene, camera: THREE.Camera): void {
-      if (current === 'toon') outline.render(scene, camera);
-      else webgl.render(scene, camera);
+      webgl.render(scene, camera);
+    },
+    prewarm(): void {
+      ensureEnvironment(renderer);
+      prewarmSurfaces([
+        'turf',
+        'fairway',
+        'green',
+        'sand',
+        'soil',
+        'rock',
+        'stone',
+        'wood',
+        'bark',
+        'leaf',
+        'water',
+        'metal',
+        'fabric',
+        'skin',
+        'generic',
+      ]);
     },
   };
 }

@@ -1,14 +1,18 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { CREASE_REAL, roundedGeometry, smoothNormals } from './geo';
+import { createSurfaceMaterial, type SurfaceKind } from './pbr';
 
 /**
- * Synty POLYGON 톤의 로우폴리 소품 빌더.
+ * 소품 빌더 — 폴리(Synty POLYGON)와 실사(PBR) 두 모드를 모두 낸다.
  *
- * - 파츠(기둥·수관·바위·판재…)를 하나의 지오메트리로 합쳐 드로우콜을 1~2개로 유지
- * - 면(삼각형)마다 아주 작은 명도 변주를 넣은 정점 색상(vertex color)으로 입체감을 준다
- * - 모든 매터리얼은 flatShading — 각진 면이 그대로 드러나는 스타일
+ * - 폴리: 파츠(기둥·수관·바위·판재…)를 하나의 지오메트리로 합치고, 면마다 명도 변주를 넣은
+ *   정점 색상 + flatShading 으로 각진 면을 그대로 드러낸다.
+ * - 실사: 같은 파츠를 분할이 많은 둥근 메시로 바꾸고(smoothNormals) 표면 종류별
+ *   PBR 텍스처(잔디·목재·바위·금속…)를 입혀 유기적인 실루엣과 재질감을 낸다.
  *
- * 지오메트리는 이름(key)별로 캐시해 홀을 바꿔도 다시 만들지 않는다.
+ * 지오메트리는 이름(key)별로 캐시하고, 실사용 지오메트리는 처음 필요할 때만 만든다.
+ * 폴리 모드만 쓰는 사용자는 실사 메시 메모리를 쓰지 않는다.
  */
 
 /** 코스·대기실 공용 팔레트 (Synty POLYGON 계열의 쨍한 단색 톤) */
@@ -73,6 +77,70 @@ export const PALETTE = {
 
 export type Bucket = 'solid' | 'metal' | 'glow';
 
+/**
+ * 표면 종류 추론 — 파츠 색으로 재질을 정한다.
+ * (팔레트 색이 곧 재질이므로 소품 정의를 고치지 않아도 실사 재질이 붙는다)
+ */
+const KIND_BY_COLOR = new Map<number, SurfaceKind>();
+function assignKind(kind: SurfaceKind, colors: readonly number[]): void {
+  for (const color of colors) KIND_BY_COLOR.set(color, kind);
+}
+assignKind('wood', [PALETTE.wood, PALETTE.woodLight, PALETTE.woodDark]);
+assignKind('bark', [PALETTE.bark, PALETTE.barkDark]);
+assignKind('leaf', [
+  PALETTE.leaf,
+  PALETTE.leafLight,
+  PALETTE.leafDark,
+  PALETTE.pine,
+  PALETTE.pineLight,
+  PALETTE.pineDark,
+  PALETTE.grass,
+  PALETTE.grassLight,
+  PALETTE.grassMid,
+  PALETTE.grassDark,
+  PALETTE.fairway,
+  PALETTE.fairwayDark,
+  PALETTE.green,
+  PALETTE.greenDark,
+  PALETTE.fringe,
+  PALETTE.rough,
+  PALETTE.roughDark,
+  PALETTE.meadow,
+  PALETTE.meadowDark,
+]);
+assignKind('sand', [PALETTE.sand, PALETTE.sandLight, PALETTE.sandDark]);
+assignKind('soil', [PALETTE.soil, PALETTE.soilDark, PALETTE.soilLight]);
+assignKind('rock', [PALETTE.rock, PALETTE.rockLight, PALETTE.rockDark]);
+assignKind('stone', [PALETTE.stone, PALETTE.stoneLight, PALETTE.stoneDark]);
+assignKind('metal', [PALETTE.metal, PALETTE.metalDark, PALETTE.gold]);
+assignKind('skin', [0xffdfb8, 0xe9bc90]);
+assignKind('fabric', [
+  PALETTE.cream,
+  PALETTE.creamDark,
+  PALETTE.white,
+  PALETTE.coral,
+  PALETTE.coralDark,
+  PALETTE.teal,
+  PALETTE.tealDark,
+  PALETTE.roof,
+  PALETTE.roofDark,
+  PALETTE.glass,
+  PALETTE.flowerPink,
+  PALETTE.flowerYellow,
+  PALETTE.flowerPurple,
+  PALETTE.dark,
+  PALETTE.sky,
+]);
+
+/** 파츠의 표면 종류 (버킷과 색으로 결정) */
+export function surfaceKindOfPart(part: PropPart): SurfaceKind {
+  if (part.kind) return part.kind;
+  const bucket = part.bucket ?? 'solid';
+  if (bucket === 'metal') return 'metal';
+  if (bucket === 'glow') return 'fabric';
+  return KIND_BY_COLOR.get(part.color) ?? 'fabric';
+}
+
 export interface PropPart {
   geo: THREE.BufferGeometry;
   color: number;
@@ -85,35 +153,58 @@ export interface PropPart {
   jitter?: number;
   /** 아래쪽을 어둡게 하는 정도 (0~0.5). 기본 0.12 */
   shade?: number;
+  /** 표면 종류를 직접 지정 (기본은 색으로 추론) */
+  kind?: SurfaceKind;
+  /** 실사 메시의 분할 단계 (작은 잎 덩어리는 1) */
+  realDetail?: number;
 }
 
-const solidMat = new THREE.MeshStandardMaterial({
-  vertexColors: true,
-  flatShading: true,
-  roughness: 0.87,
-  metalness: 0.0,
-});
+const polyMaterials = new Map<string, THREE.MeshStandardMaterial>();
 
-const metalMat = new THREE.MeshStandardMaterial({
-  vertexColors: true,
-  flatShading: true,
-  roughness: 0.32,
-  metalness: 0.62,
-});
+/** 폴리 룩 매터리얼 — 종류별로 같은 파라미터의 인스턴스를 따로 둬, 실사 룩에서 재질을 1:1로 바꿀 수 있게 한다 */
+function polyMaterial(kind: SurfaceKind, bucket: Bucket): THREE.MeshStandardMaterial {
+  const key = `${bucket}|${kind}`;
+  const cached = polyMaterials.get(key);
+  if (cached) return cached;
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    flatShading: true,
+    roughness: bucket === 'metal' ? 0.32 : bucket === 'glow' ? 0.45 : 0.87,
+    metalness: bucket === 'metal' ? 0.62 : bucket === 'glow' ? 0.1 : 0.0,
+    ...(bucket === 'glow' ? { emissive: new THREE.Color(0xffe6a6), emissiveIntensity: 0.75 } : {}),
+  });
+  material.name = `poly-${bucket}-${kind}`;
+  material.userData.oneoneSurface = kind;
+  material.userData.oneonePropBucket = bucket;
+  polyMaterials.set(key, material);
+  return material;
+}
 
-const glowMat = new THREE.MeshStandardMaterial({
-  vertexColors: true,
-  flatShading: true,
-  roughness: 0.45,
-  metalness: 0.1,
-  emissive: new THREE.Color(0xffe6a6),
-  emissiveIntensity: 0.75,
-});
+const realMaterials = new Map<string, THREE.Material>();
 
-function materialFor(bucket: Bucket): THREE.Material {
-  if (bucket === 'metal') return metalMat;
-  if (bucket === 'glow') return glowMat;
-  return solidMat;
+/** 실사 룩 매터리얼 — 표면 종류별 PBR 텍스처 + 환경 반사 */
+function realMaterial(kind: SurfaceKind, bucket: Bucket): THREE.Material {
+  const key = `${bucket}|${kind}`;
+  const cached = realMaterials.get(key);
+  if (cached) return cached;
+  const material =
+    bucket === 'glow'
+      ? createSurfaceMaterial('fabric', {
+          vertexColors: true,
+          roughness: 0.5,
+          metalness: 0.05,
+          emissive: 0xffe6a6,
+          emissiveIntensity: 0.55,
+          envIntensity: 0.5,
+        })
+      : createSurfaceMaterial(kind, {
+          vertexColors: true,
+          ...(bucket === 'metal' ? { roughness: 0.3, metalness: 0.95, envIntensity: 1.5 } : {}),
+        });
+  material.name = `real-${bucket}-${kind}`;
+  material.userData.oneonePropBucket = bucket;
+  realMaterials.set(key, material);
+  return material;
 }
 
 /** 시드 고정 난수 */
@@ -135,8 +226,10 @@ const _scale = new THREE.Vector3();
 const _color = new THREE.Color();
 
 /** 지오메트리를 변환하고 면 단위 색을 입혀 비인덱스 지오메트리로 만든다 */
-function bakePart(part: PropPart): THREE.BufferGeometry {
-  const source = part.geo;
+function bakePart(part: PropPart, real = false): THREE.BufferGeometry {
+  const kind = surfaceKindOfPart(part);
+  const organic = kind === 'leaf' || kind === 'rock';
+  const source = real ? roundedGeometry(part.geo, organic, part.realDetail) : part.geo;
   const geo = source.index ? source.toNonIndexed() : source.clone();
   geo.deleteAttribute('uv');
   geo.deleteAttribute('uv1');
@@ -154,12 +247,15 @@ function bakePart(part: PropPart): THREE.BufferGeometry {
   _matrix.compose(_position, _quat, _scale);
   geo.applyMatrix4(_matrix);
   geo.computeVertexNormals();
+  // 실사 메시는 곡면을 살린 부드러운 노멀 (죽은 면이 없도록)
+  if (real) smoothNormals(geo, CREASE_REAL);
 
   const position = geo.getAttribute('position');
   const count = position.count;
   const colors = new Float32Array(count * 3);
   _color.setHex(part.color);
-  const jitter = part.jitter ?? 0.07;
+  // 실사 모드는 면 단위 색 변주를 줄인다 (실제 표면은 면마다 색이 튀지 않는다)
+  const jitter = (part.jitter ?? 0.07) * (real ? 0.4 : 1);
   const shade = part.shade ?? 0.12;
 
   let minY = Infinity;
@@ -187,42 +283,117 @@ function bakePart(part: PropPart): THREE.BufferGeometry {
   return geo;
 }
 
-interface CachedProp {
+interface CachedEntry {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   cast: boolean;
+  kind: SurfaceKind;
 }
 
-const propCache = new Map<string, CachedProp[]>();
+interface CachedProp {
+  parts: PropPart[];
+  poly: CachedEntry[];
+  real?: CachedEntry[];
+}
+
+const propCache = new Map<string, CachedProp>();
+
+/** 파츠를 표면 종류·버킷별로 합쳐 메시 목록을 만든다 */
+function buildEntries(parts: PropPart[], real: boolean): CachedEntry[] {
+  const buckets = new Map<string, { bucket: Bucket; kind: SurfaceKind; geometries: THREE.BufferGeometry[] }>();
+  for (const part of parts) {
+    const bucket = part.bucket ?? 'solid';
+    const kind = surfaceKindOfPart(part);
+    const key = `${bucket}|${kind}`;
+    let slot = buckets.get(key);
+    if (!slot) {
+      slot = { bucket, kind, geometries: [] };
+      buckets.set(key, slot);
+    }
+    slot.geometries.push(bakePart(part, real));
+  }
+
+  const entries: CachedEntry[] = [];
+  buckets.forEach((slot) => {
+    const merged = mergeGeometries(slot.geometries, false);
+    slot.geometries.forEach((geo) => geo.dispose());
+    if (!merged) return;
+    merged.computeBoundingSphere();
+    entries.push({
+      geometry: merged,
+      material: real ? realMaterial(slot.kind, slot.bucket) : polyMaterial(slot.kind, slot.bucket),
+      cast: slot.bucket !== 'glow',
+      kind: slot.kind,
+    });
+  });
+  return entries;
+}
 
 /**
- * 파츠 목록을 버킷별로 합쳐 소품 그룹을 만든다.
+ * 파츠 목록을 합쳐 소품 그룹을 만든다 (폴리 룩).
  * key 가 같으면 지오메트리를 재사용하므로 홀·대기실에서 반복 배치해도 메모리가 늘지 않는다.
+ * 실사 룩의 메시는 `realVariant` 로 따로 붙인다 (그래픽스 룩 시스템이 붙이고 감춘다).
  */
 export function buildProp(key: string, parts: PropPart[]): THREE.Group {
-  let entries = propCache.get(key);
-  if (!entries) {
-    const buckets: Record<Bucket, THREE.BufferGeometry[]> = { solid: [], metal: [], glow: [] };
-    for (const part of parts) {
-      const bucket = part.bucket ?? 'solid';
-      buckets[bucket].push(bakePart(part));
-    }
-    entries = [];
-    for (const bucket of ['solid', 'metal', 'glow'] as Bucket[]) {
-      if (buckets[bucket].length === 0) continue;
-      const merged = mergeGeometries(buckets[bucket], false);
-      buckets[bucket].forEach((geo) => geo.dispose());
-      if (!merged) continue;
-      merged.computeBoundingSphere();
-      entries.push({ geometry: merged, material: materialFor(bucket), cast: bucket !== 'glow' });
-    }
-    propCache.set(key, entries);
+  let entry = propCache.get(key);
+  if (!entry) {
+    entry = { parts, poly: buildEntries(parts, false) };
+    propCache.set(key, entry);
   }
 
   const group = new THREE.Group();
-  for (const entry of entries) {
-    const mesh = new THREE.Mesh(entry.geometry, entry.material);
-    mesh.castShadow = entry.cast;
+  group.userData.propKey = key;
+  for (const item of entry.poly) {
+    const mesh = new THREE.Mesh(item.geometry, item.material);
+    mesh.castShadow = item.cast;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
+// ---------------------------------------------------------------- 실사 변형
+
+const realDetail = new Map<string, (parts: PropPart[]) => PropPart[]>();
+
+/**
+ * 실사 모드에서만 덧붙는 디테일 파츠를 등록한다.
+ * 예: 잎 덩어리를 더 많이 흩뿌려 수관을 풍성하게, 바위에 작은 돌을 더.
+ * key 는 정확히 일치하거나 접두어(예: `golfer-body`)로 찾는다.
+ */
+export function registerRealDetail(key: string, build: (parts: PropPart[]) => PropPart[]): void {
+  realDetail.set(key, build);
+}
+
+function realDetailFor(key: string): ((parts: PropPart[]) => PropPart[]) | undefined {
+  const exact = realDetail.get(key);
+  if (exact) return exact;
+  let best: string | null = null;
+  realDetail.forEach((_value, prefix) => {
+    if (!key.startsWith(prefix)) return;
+    if (!best || prefix.length > best.length) best = prefix;
+  });
+  return best ? realDetail.get(best) : undefined;
+}
+
+/**
+ * 소품 key 의 실사 메시 그룹을 만든다 (지오메트리는 key 별로 한 번만 생성·캐시).
+ * 반환된 그룹은 소품 그룹의 자식으로 붙여 룩에 따라 보이고 감춘다.
+ */
+export function realVariantFor(key: string): THREE.Group | null {
+  const entry = propCache.get(key);
+  if (!entry) return null;
+  if (!entry.real) {
+    const detail = realDetailFor(key);
+    const parts = detail ? [...entry.parts, ...detail(entry.parts)] : entry.parts;
+    entry.real = buildEntries(parts, true);
+  }
+  const group = new THREE.Group();
+  group.name = `${key}-real`;
+  group.userData.oneoneVariantOf = 'real';
+  for (const item of entry.real) {
+    const mesh = new THREE.Mesh(item.geometry, item.material);
+    mesh.castShadow = item.cast;
     mesh.receiveShadow = true;
     group.add(mesh);
   }
@@ -231,7 +402,10 @@ export function buildProp(key: string, parts: PropPart[]): THREE.Group {
 
 /** 캐시된 소품 지오메트리 정리 (씬을 완전히 버릴 때만) */
 export function disposePropCache(): void {
-  propCache.forEach((entries) => entries.forEach((entry) => entry.geometry.dispose()));
+  propCache.forEach((entry) => {
+    entry.poly.forEach((item) => item.geometry.dispose());
+    entry.real?.forEach((item) => item.geometry.dispose());
+  });
   propCache.clear();
 }
 

@@ -11,7 +11,17 @@ import { bindHoldControl } from './game/swing-input';
 import { Lobby, type LobbyPeer } from './lobby/lobby';
 import { SURFACE_LABEL, CLUBS, getClub, type ClubId } from './game/clubs';
 import { applyRendererLook, buildSky } from './game/environment';
-import { createLookRenderer, getLook, onLookChange, registerLookScene, setLook, syncLook, toggleLook } from './game/graphics';
+import {
+  createLookRenderer,
+  getLook,
+  onLookChange,
+  registerLookScene,
+  setLook,
+  syncLook,
+  tickLook,
+  toggleLook,
+  type GraphicLook,
+} from './game/graphics';
 
 function $(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -42,7 +52,7 @@ try {
 applyRendererLook(renderer);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-// 그래픽 룩(폴리 ↔ 카툰)을 바꿔 그리는 렌더러
+// 그래픽 룩(폴리 ↔ 실사 PBR)을 바꿔 그리는 렌더러
 const lookRenderer = createLookRenderer(renderer);
 
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 320);
@@ -112,7 +122,7 @@ const lobbyFill = new THREE.DirectionalLight(0xd6ecff, 0.42);
 lobbyFill.position.set(-15, 10, -17);
 lobbyScene.add(lobbyFill);
 
-// 두 씬 모두 룩 토글 대상으로 등록 (저장된 선택이 카툰이면 여기서 바로 적용된다)
+// 두 씬 모두 룩 토글 대상으로 등록 (저장된 선택이 실사면 여기서 바로 적용된다)
 registerLookScene(gameScene);
 registerLookScene(lobbyScene);
 
@@ -610,7 +620,7 @@ gateButton.addEventListener('click', () => {
   lobby.requestPlayroom();
 });
 
-// ---------------------------------------------------------------- 그래픽 룩 (폴리 ↔ 카툰)
+// ---------------------------------------------------------------- 그래픽 룩 (폴리 ↔ 실사 PBR)
 
 const lookButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.look-switch button[data-look]'));
 
@@ -623,13 +633,13 @@ function syncLookUi(): void {
 
 lookButtons.forEach((button) => {
   button.addEventListener('click', () => {
-    const next = button.dataset.look === 'toon' ? 'toon' : 'synty';
+    const next: GraphicLook = button.dataset.look === 'real' ? 'real' : 'synty';
     if (next === getLook()) return;
     audio.unlock();
     audio.ui();
     setLook(next);
     syncLookUi();
-    showToast(next === 'toon' ? '🎨 카툰 렌더링 · 셀 셰이딩 + 외곽선' : '🧊 Synty 폴리 스타일');
+    showToast(next === 'real' ? '🌿 실사 PBR · 텍스처 + 환경 반사' : '🧊 Synty 폴리 스타일');
   });
 });
 
@@ -643,8 +653,11 @@ window.addEventListener('keydown', (event) => {
   if (mode === 'landing' || transitioning) return;
   toggleLook();
   syncLookUi();
-  showToast(getLook() === 'toon' ? '🎨 카툰 렌더링' : '🧊 Synty 폴리 스타일');
+  showToast(getLook() === 'real' ? '🌿 실사 PBR' : '🧊 Synty 폴리 스타일');
 });
+
+// 실사 텍스처·환경맵은 한가할 때 미리 만들어 첫 전환이 끊기지 않게 한다
+window.setTimeout(() => lookRenderer.prewarm(), 1600);
 
 // ---------------------------------------------------------------- HUD 조작
 
@@ -971,6 +984,7 @@ function frame(now: number): void {
   // 새로 만들어진 오브젝트(홀 교체·입장한 골퍼)도 현재 룩을 따라오게 주기적으로 맞춘다
   lookSyncTick += 1;
   if (lookSyncTick % 20 === 0) syncLook();
+  tickLook(dt);
 
   if (mode === 'game') {
     game.update(dt);

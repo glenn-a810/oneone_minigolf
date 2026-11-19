@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ballTexture, cloudTexture, softDotTexture } from './textures';
-import { PALETTE, buildProp, column, lump, plank, seeded, type PropPart } from './props';
+import { PALETTE, buildProp, column, lump, plank, registerRealDetail, seeded, type PropPart } from './props';
 
 /**
  * 코스·대기실 소품 라이브러리 (Synty POLYGON 톤).
@@ -787,3 +787,112 @@ export function createStoneWall(length = 2.6, scale = 1): THREE.Group {
   group.scale.setScalar(scale);
   return group;
 }
+
+// ---------------------------------------------------------------- 실사 모드 디테일
+//
+// 실사 모드에서만 덧붙는 파츠. 둥근 메시만으로는 실루엣이 매끈한 원뿔/구로 보이므로,
+// 실제 나무처럼 잎 덩어리를 많이 흘어 수관을 풍성하게 만든다.
+
+/** 소나무: 층마다 바늘 다발을 흘려 원뿔 실루엣을 부순다 */
+registerRealDetail('pine', () => {
+  const rand = seeded(7771);
+  const tiers = [
+    { y: 2.5, r: 1.28 },
+    { y: 3.32, r: 1.02 },
+    { y: 4.06, r: 0.76 },
+    { y: 4.68, r: 0.48 },
+  ];
+  const parts: PropPart[] = [];
+  tiers.forEach((tier, index) => {
+    const count = 10 - index * 2;
+    for (let i = 0; i < count; i += 1) {
+      const angle = (i / count) * Math.PI * 2 + rand() * 0.5;
+      const radius = tier.r * (0.55 + rand() * 0.5);
+      const size = 0.16 + rand() * 0.16;
+      parts.push({
+        geo: lump(1),
+        color: index % 2 === 0 ? PALETTE.pineDark : PALETTE.pine,
+        pos: [Math.cos(angle) * radius, tier.y - tier.r * 0.5 + rand() * 0.4, Math.sin(angle) * radius],
+        scale: [size * 1.2, size * 0.7, size * 1.2],
+        rot: [rand() * 3, rand() * 3, rand() * 3],
+        jitter: 0.22,
+        kind: 'leaf',
+        realDetail: 1,
+      });
+    }
+  });
+  return parts;
+});
+
+/** 활엽수: 수관을 잎 덩어리 26개로 채워 둥글고 풍성한 실루엣 */
+registerRealDetail('tree', () => {
+  const rand = seeded(3319);
+  const leaves = [PALETTE.leaf, PALETTE.leafLight, PALETTE.leafDark];
+  const parts: PropPart[] = [];
+  for (let i = 0; i < 26; i += 1) {
+    const theta = rand() * Math.PI * 2;
+    const phi = Math.acos(2 * rand() - 1);
+    const radius = 0.52 + rand() * 0.52;
+    const x = Math.sin(phi) * Math.cos(theta) * radius;
+    const y = 2.7 + Math.cos(phi) * radius * 0.8;
+    const z = Math.sin(phi) * Math.sin(theta) * radius;
+    const size = 0.15 + rand() * 0.16;
+    parts.push({
+      geo: lump(1),
+      color: leaves[i % leaves.length],
+      pos: [x, y, z],
+      scale: [size, size * 0.86, size],
+      rot: [rand() * 3, rand() * 3, rand() * 3],
+      jitter: 0.24,
+      kind: 'leaf',
+      realDetail: 1,
+    });
+  }
+  return parts;
+});
+
+/** 덤불: 잎 덩어리를 더 촘촘히 */
+registerRealDetail('bush', () => {
+  const rand = seeded(5503);
+  const leaves = [PALETTE.leaf, PALETTE.leafLight, PALETTE.leafDark];
+  const parts: PropPart[] = [];
+  for (let i = 0; i < 11; i += 1) {
+    const angle = rand() * Math.PI * 2;
+    const radius = rand() * 0.5;
+    const size = 0.12 + rand() * 0.13;
+    parts.push({
+      geo: lump(1),
+      color: leaves[i % leaves.length],
+      pos: [Math.cos(angle) * radius, 0.3 + rand() * 0.3, Math.sin(angle) * radius],
+      scale: [size, size * 0.9, size],
+      rot: [rand() * 3, rand() * 3, rand() * 3],
+      jitter: 0.24,
+      kind: 'leaf',
+      realDetail: 1,
+    });
+  }
+  return parts;
+});
+
+/** 바위 군집: 발치에 작은 자갈을 더해 부서진 암석처럼 */
+registerRealDetail('rock-', () => {
+  const rand = seeded(9137);
+  const tones = [PALETTE.rock, PALETTE.rockLight, PALETTE.rockDark];
+  const parts: PropPart[] = [];
+  for (let i = 0; i < 5; i += 1) {
+    const angle = rand() * Math.PI * 2;
+    const radius = 0.45 + rand() * 0.45;
+    const size = 0.07 + rand() * 0.1;
+    parts.push({
+      geo: lump(1),
+      color: tones[Math.floor(rand() * tones.length)],
+      pos: [Math.cos(angle) * radius, size * 0.5, Math.sin(angle) * radius],
+      scale: [size, size * 0.7, size],
+      rot: [rand() * 3, rand() * 3, rand() * 3],
+      jitter: 0.16,
+      kind: 'rock',
+      realDetail: 1,
+    });
+  }
+  return parts;
+});

@@ -23,6 +23,7 @@ import {
 import { PALETTE, mergeStaticMeshes, paintFaces, seeded } from './props';
 import { FALLBACK, flagTexture, waterTexture } from './textures';
 import { markGround, releaseLookGeometry } from './graphics';
+import type { SurfaceKind } from './pbr';
 
 /**
  * 한 홀의 3D 코스.
@@ -407,16 +408,24 @@ export class Course {
     return geometry;
   }
 
-  private material(params: THREE.MeshStandardMaterialParameters): THREE.MeshStandardMaterial {
+  private material(
+    params: THREE.MeshStandardMaterialParameters,
+    kind?: SurfaceKind,
+  ): THREE.MeshStandardMaterial {
     const material = new THREE.MeshStandardMaterial(params);
+    if (kind) material.userData.oneoneSurface = kind;
     this.materials.push(material);
     if (material.map) this.textures.push(material.map);
     return material;
   }
 
-  /** 정점 색상 + 플랫 셰이딩 지면 매터리얼 (카툰 모드에서도 외곽선은 그리지 않는다) */
-  private groundMaterial(roughness = 0.94, flatShading = true): THREE.MeshStandardMaterial {
-    return markGround(this.material({ vertexColors: true, roughness, flatShading }));
+  /** 정점 색상 + 플랫 셰이딩 지면 매터리얼 (실사 룩에서는 표면 종류별 PBR 재질로 바뀐다) */
+  private groundMaterial(
+    roughness = 0.94,
+    flatShading = true,
+    kind?: SurfaceKind,
+  ): THREE.MeshStandardMaterial {
+    return markGround(this.material({ vertexColors: true, roughness, flatShading }, kind), kind);
   }
 
   private addGround(
@@ -443,7 +452,7 @@ export class Course {
     const hole = this.spec;
 
     // 주변 지형 — 섬 아래로 이어지는 넓은 러프 (면마다 다른 잔디 톤)
-    const apronMat = this.groundMaterial(0.98);
+    const apronMat = this.groundMaterial(0.98, true, 'turf');
     const apronGeo = new THREE.PlaneGeometry(200, 200, 34, 34);
     apronGeo.rotateX(-Math.PI / 2);
     const apron = this.addGround(
@@ -466,7 +475,7 @@ export class Course {
       .filter((points) => points.every((point) => pointInPolygon(this.islandPoly, point.x, point.z)));
 
     // 잔디 섬 — 위는 러프, 옆면은 층층이 드러난 흙 단면
-    const islandMat = this.groundMaterial(0.95);
+    const islandMat = this.groundMaterial(0.95, true, 'turf');
     const islandGeo = extrudedGround(this.islandPoly, holes, ISLAND_DEPTH);
     const island = this.addGround(
       islandGeo,
@@ -486,7 +495,7 @@ export class Course {
     island.castShadow = true;
 
     // 페어웨이 — 깎은 잔디 스트라이프가 또렷한 격자 리본 + 어두운 테두리
-    const fairwayMat = this.groundMaterial(0.93);
+    const fairwayMat = this.groundMaterial(0.93, true, 'fairway');
     const hem = this.addGround(
       corridorGrid(this.fairwayLine, hole.fairwayWidth + 0.42, 10, onLand),
       fairwayMat,
@@ -513,8 +522,8 @@ export class Course {
     fairway.position.y = 0.014;
 
     // 그린 + 프린지 링 + 에이프런 링
-    const greenMat = this.groundMaterial(0.88);
-    const apronRingMat = this.groundMaterial(0.93);
+    const greenMat = this.groundMaterial(0.88, true, 'green');
+    const apronRingMat = this.groundMaterial(0.93, true, 'turf');
     const apronRing = this.addGround(
       ellipseRing(0.86, 1.0, hole.green.r + 3.1, hole.green.r + 3.1, 64),
       apronRingMat,
@@ -563,7 +572,7 @@ export class Course {
     });
 
     // 벙커 — 모래 바닥 + 살짝 솟은 테두리 턱 + 그늘
-    const sandMat = this.groundMaterial(1, false);
+    const sandMat = this.groundMaterial(1, false, 'sand');
     for (const zone of hole.zones ?? []) {
       if (zone.kind !== 'bunker') continue;
       const lip = this.addGround(
@@ -591,16 +600,19 @@ export class Course {
 
     // 연못 — 파인 웅덩이 + 잔물결 + 거품 테두리
     const waterTex = waterTexture(0.14);
-    const waterMat = this.material({
-      color: waterTex ? 0xffffff : FALLBACK.water,
-      map: waterTex,
-      roughness: 0.1,
-      metalness: 0.32,
-      transparent: true,
-      opacity: 0.94,
-    });
-    const basinMat = this.groundMaterial(1, false);
-    const foamMat = this.material({ color: 0xeaf7ff, roughness: 0.5, transparent: true, opacity: 0.55 });
+    const waterMat = this.material(
+      {
+        color: waterTex ? 0xffffff : FALLBACK.water,
+        map: waterTex,
+        roughness: 0.1,
+        metalness: 0.32,
+        transparent: true,
+        opacity: 0.94,
+      },
+      'water',
+    );
+    const basinMat = this.groundMaterial(1, false, 'soil');
+    const foamMat = this.material({ color: 0xeaf7ff, roughness: 0.5, transparent: true, opacity: 0.55 }, 'fabric');
     for (const zone of waterZones) {
       const basinGeo = this.track(new THREE.CylinderGeometry(zone.rx, zone.rx * 0.9, 1.0, 40, 1, true));
       basinGeo.scale(1, 1, zone.rz / zone.rx);
@@ -679,7 +691,7 @@ export class Course {
     }
 
     // 티박스 — 단차 있는 티 패드 + 티 마커
-    const teePadMat = this.groundMaterial(0.9, false);
+    const teePadMat = this.groundMaterial(0.9, false, 'fairway');
     const teePadGeo = extrudedGround(
       ellipsePoints({ kind: 'bunker', x: hole.tee[0], z: hole.tee[1], rx: 2.3, rz: 1.8 }, 32),
       [],
@@ -697,7 +709,7 @@ export class Course {
     );
     teePad.position.set(0, 0.02, 0);
 
-    const teeRimMat = this.groundMaterial(0.95, false);
+    const teeRimMat = this.groundMaterial(0.95, false, 'stone');
     const teeRim = this.addGround(
       ellipseRing(0.95, 1.0, 2.34, 1.84, 40),
       teeRimMat,
@@ -709,7 +721,7 @@ export class Course {
     );
     teeRim.position.set(hole.tee[0], 0.021, hole.tee[1]);
 
-    const teeMarkerMat = this.groundMaterial(0.7, false);
+    const teeMarkerMat = this.groundMaterial(0.7, false, 'fabric');
     [-1.0, 1.0].forEach((dx) => {
       const postGeo = new THREE.CylinderGeometry(0.055, 0.07, 0.3, 5);
       const marked = paintFaces(
@@ -742,11 +754,11 @@ export class Course {
     });
 
     // 컵 + 깃발
-    const cupMat = this.material({ color: 0x1a2a24, roughness: 0.95 });
+    const cupMat = this.material({ color: 0x1a2a24, roughness: 0.95 }, 'soil');
     const cupDisc = new THREE.Mesh(this.track(ellipseDisc(0.19, 0.19, 32)), cupMat);
     cupDisc.position.set(this.cup.x, 0.022, this.cup.z);
     this.group.add(cupDisc);
-    const rimMat = this.material({ color: 0xf7f3e6, roughness: 0.5 });
+    const rimMat = this.material({ color: 0xf7f3e6, roughness: 0.5 }, 'fabric');
     const rimGeo = this.track(new THREE.TorusGeometry(0.2, 0.016, 8, 32));
     rimGeo.rotateX(-Math.PI / 2);
     const rim = new THREE.Mesh(rimGeo, rimMat);
@@ -754,8 +766,8 @@ export class Course {
     this.group.add(rim);
 
     const flagGroup = new THREE.Group();
-    const poleMat = this.material({ color: 0xf8f8f2, roughness: 0.35, metalness: 0.4 });
-    const collarMat = this.material({ color: 0xf2c14e, roughness: 0.3, metalness: 0.7 });
+    const poleMat = this.material({ color: 0xf8f8f2, roughness: 0.35, metalness: 0.8 }, 'metal');
+    const collarMat = this.material({ color: 0xf2c14e, roughness: 0.3, metalness: 0.9 }, 'metal');
     const pole = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.02, 0.022, 1.72, 8)), poleMat);
     pole.position.y = 0.86;
     pole.castShadow = true;
@@ -768,12 +780,15 @@ export class Course {
     flagGroup.add(finial);
 
     const flagTex = flagTexture();
-    const clothMat = this.material({
-      color: flagTex ? 0xffffff : 0xff5c78,
-      map: flagTex,
-      roughness: 0.72,
-      side: THREE.DoubleSide,
-    });
+    const clothMat = this.material(
+      {
+        color: flagTex ? 0xffffff : 0xff5c78,
+        map: flagTex,
+        roughness: 0.72,
+        side: THREE.DoubleSide,
+      },
+      'fabric',
+    );
     const clothGeo = this.track(new THREE.PlaneGeometry(0.64, 0.4, 10, 4));
     clothGeo.translate(0.32, 0, 0);
     // 매 프레임 정점을 흔드는 천은 노멀 사본을 만들지 않는다
@@ -839,7 +854,7 @@ export class Course {
       (point) => this.contains(point.x, point.z),
     );
     if (cartLine.length > 6) {
-      const cartMat = this.groundMaterial(0.98, false);
+      const cartMat = this.groundMaterial(0.98, false, 'sand');
       const cartPath = this.addGround(
         corridorGrid(cartLine, 0.85, 3, onLand),
         cartMat,
@@ -1045,7 +1060,7 @@ export class Course {
 
   dispose(): void {
     this.scene.remove(this.group);
-    // 카툰 모드용 매끈 노멀 사본도 함께 정리한다
+    // 룩 시스템이 남긴 표시(감춘 소품 등)를 정리한다
     releaseLookGeometry(this.group);
     this.geometries.forEach((geometry) => geometry.dispose());
     this.geometries.length = 0;

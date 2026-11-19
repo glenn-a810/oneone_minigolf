@@ -10,6 +10,7 @@ import {
   type PropPart,
 } from '../game/props';
 import { markGround } from '../game/graphics';
+import type { SurfaceKind } from '../game/pbr';
 import {
   createBagStand,
   createBench,
@@ -181,7 +182,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   );
   const field = new THREE.Mesh(
     fieldPainted,
-    markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.98 })),
+    markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.98 }), 'turf'),
   );
   field.position.y = -0.46;
   field.receiveShadow = true;
@@ -205,7 +206,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   );
   const base = new THREE.Mesh(
     basePainted,
-    markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.97 })),
+    markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.97 }), 'turf'),
   );
   base.position.y = -0.85;
   base.receiveShadow = true;
@@ -213,7 +214,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   root.add(base);
 
   // 돌 광장 바닥
-  const stoneMat = markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }));
+  const stoneMat = markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }), 'stone');
   const stoneGeo = paintFaces(
     discGrid(5.15, 4, 34),
     (cx, _cy, cz, _ny, out) => {
@@ -276,6 +277,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
     transparent: true,
     opacity: 0.93,
   });
+  waterMat.userData.oneoneSurface = 'water';
   const pond = new THREE.Mesh(new THREE.CircleGeometry(pondR, 40), waterMat);
   pond.rotation.x = -Math.PI / 2;
   pond.position.set(pondX, 0.018, pondZ);
@@ -319,7 +321,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
           },
           0.06,
         ),
-        markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.88 })),
+        markGround(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.88 }), 'wood'),
       ),
     );
   }
@@ -508,6 +510,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   root.add(gate);
 
   const gateStoneMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
+  gateStoneMat.userData.oneoneSurface = 'stone' satisfies SurfaceKind;
   const gateGlowMat = new THREE.MeshStandardMaterial({
     color: 0x6fe6ff,
     emissive: 0x35c8ff,
