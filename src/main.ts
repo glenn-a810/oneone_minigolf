@@ -999,8 +999,10 @@ function frame(now: number): void {
 
 requestAnimationFrame(frame);
 
-// (임시 진단용) — 확인 후 제거
-(window as unknown as Record<string, unknown>).__oneone = { renderer, gameScene, lobbyScene, camera };
+// 개발 중 룩 진단용 (배포 빌드에는 남지 않는다)
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>).__oneone = { renderer, gameScene, lobbyScene, camera };
+}
 
 // HUD의 남은 거리/타수는 프레임과 무관하게 가볍게 갱신
 window.setInterval(() => {
