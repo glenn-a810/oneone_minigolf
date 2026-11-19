@@ -12,7 +12,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
  */
 
 const CREASE_45 = Math.cos((45 * Math.PI) / 180);
-const CREASE_60 = Math.cos((60 * Math.PI) / 180);
+const CREASE_60 = Math.cos((72 * Math.PI) / 180);
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();

@@ -89,10 +89,11 @@ export function buildSky(scene: THREE.Scene, options: SkyOptions = {}): SkyHandl
     hillMat.userData.oneonePlainReal = true;
     for (let i = 0; i < 26; i += 1) {
       const angle = (i / 26) * Math.PI * 2 + Math.random() * 0.25;
-      const distance = 88 + Math.random() * 34;
-      const size = 16 + Math.random() * 18;
+      // 들판(반경 100m) 밖에 두어 지면과 교차하며 생기는 지글거림을 피한다
+      const distance = 112 + Math.random() * 38;
+      const size = 18 + Math.random() * 18;
       const hill = new THREE.Mesh(new THREE.ConeGeometry(size, size * 0.62, 7), hillMat);
-      hill.position.set(Math.cos(angle) * distance, -3 + Math.random() * 2.5, Math.sin(angle) * distance);
+      hill.position.set(Math.cos(angle) * distance, -9 + Math.random() * 2.5, Math.sin(angle) * distance);
       hill.rotation.y = Math.random() * Math.PI;
       hill.receiveShadow = false;
       hill.userData.realRound = true;

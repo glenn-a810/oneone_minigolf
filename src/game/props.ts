@@ -267,16 +267,29 @@ function bakePart(part: PropPart, real = false): THREE.BufferGeometry {
   }
   const span = Math.max(1e-4, maxY - minY);
 
-  for (let i = 0; i < count; i += 3) {
-    const factor = 1 + (paintRand() - 0.5) * jitter;
-    const midY = (position.getY(i) + position.getY(i + 1) + position.getY(i + 2)) / 3;
-    const heightT = (midY - minY) / span;
-    const tone = factor * (1 - shade * (1 - heightT));
-    for (let k = 0; k < 3; k += 1) {
-      const index = (i + k) * 3;
+  if (real) {
+    // 실사 메시는 정점 단위 색 — 면마다 색이 튀면 둥근 곡면이 각진 삼각형으로 보인다
+    for (let i = 0; i < count; i += 1) {
+      const factor = 1 + (paintRand() - 0.5) * jitter;
+      const heightT = (position.getY(i) - minY) / span;
+      const tone = factor * (1 - shade * (1 - heightT));
+      const index = i * 3;
       colors[index] = Math.min(1, _color.r * tone);
       colors[index + 1] = Math.min(1, _color.g * tone);
       colors[index + 2] = Math.min(1, _color.b * tone);
+    }
+  } else {
+    for (let i = 0; i < count; i += 3) {
+      const factor = 1 + (paintRand() - 0.5) * jitter;
+      const midY = (position.getY(i) + position.getY(i + 1) + position.getY(i + 2)) / 3;
+      const heightT = (midY - minY) / span;
+      const tone = factor * (1 - shade * (1 - heightT));
+      for (let k = 0; k < 3; k += 1) {
+        const index = (i + k) * 3;
+        colors[index] = Math.min(1, _color.r * tone);
+        colors[index + 1] = Math.min(1, _color.g * tone);
+        colors[index + 2] = Math.min(1, _color.b * tone);
+      }
     }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
