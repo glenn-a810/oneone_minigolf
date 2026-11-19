@@ -560,13 +560,21 @@ export function createClubhouse(): THREE.Group {
     });
   });
   parts.push({ geo: plank(0.36, 0.3, 7.1), color: PALETTE.roofDark, pos: [0, 5.94, 0], jitter: 0.05 });
-  // 박공 벽 (계단식 판재로 삼각형을 채운다)
+  // 박공 벽 (삼각 기둥)
+  const gableShape = new THREE.Shape();
+  gableShape.moveTo(-4.15, 3.2);
+  gableShape.lineTo(4.15, 3.2);
+  gableShape.lineTo(0, 5.78);
+  gableShape.closePath();
+  const gableGeo = new THREE.ExtrudeGeometry(gableShape, { depth: 0.2, bevelEnabled: false });
   [1, -1].forEach((side) => {
-    parts.push({ geo: plank(5.6, 0.5, 0.22), color: PALETTE.cream, pos: [0, 3.55, side * 2.72], jitter: 0.05 });
-    parts.push({ geo: plank(4.2, 0.5, 0.22), color: PALETTE.cream, pos: [0, 4.05, side * 2.72], jitter: 0.05 });
-    parts.push({ geo: plank(2.7, 0.5, 0.22), color: PALETTE.cream, pos: [0, 4.55, side * 2.72], jitter: 0.05 });
-    parts.push({ geo: plank(1.3, 0.5, 0.22), color: PALETTE.cream, pos: [0, 5.05, side * 2.72], jitter: 0.05 });
-    parts.push({ geo: plank(0.4, 0.45, 0.22), color: PALETTE.cream, pos: [0, 5.52, side * 2.72], jitter: 0.05 });
+    parts.push({
+      geo: gableGeo,
+      color: PALETTE.cream,
+      pos: [0, 0, side * 2.62],
+      rot: [0, side > 0 ? 0 : Math.PI, 0],
+      jitter: 0.04,
+    });
   });
 
   // 현관 포치 (지붕·천장·기둥·난간)

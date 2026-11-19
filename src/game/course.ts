@@ -305,12 +305,11 @@ function noise2(x: number, z: number): number {
   return s - Math.floor(s);
 }
 
-/** 잔디 톤: 큰 얼룩 + 면 단위 변주 */
+/** 잔디 톤: 아주 완만한 큰 얼룩만 (면 단위 변주는 paintFaces 가 더한다) */
 function turfTone(base: number, x: number, z: number, out: THREE.Color): THREE.Color {
-  const patch = noise2(Math.floor(x * 0.35), Math.floor(z * 0.35));
-  const shift = (patch - 0.5) * 0.1;
+  const wave = Math.sin(x * 0.21 + Math.cos(z * 0.17) * 1.6) * Math.cos(z * 0.19 + Math.sin(x * 0.13) * 1.2);
   out.setHex(base);
-  out.offsetHSL(0, 0, shift * 0.5);
+  out.offsetHSL(0, 0, wave * 0.016);
   return out;
 }
 
@@ -450,10 +449,7 @@ export class Course {
       apronGeo,
       apronMat,
       (cx, _cy, cz, _ny, out) => {
-        const t = noise2(Math.floor(cx * 0.22), Math.floor(cz * 0.22));
-        out.setHex(t > 0.55 ? PALETTE.meadow : PALETTE.meadowDark);
-        out.offsetHSL(0, 0, (t - 0.5) * 0.05);
-        return out;
+        return turfTone(noise2(Math.floor(cx * 0.03), Math.floor(cz * 0.03)) > 0.45 ? PALETTE.meadow : PALETTE.meadowDark, cx, cz, out);
       },
       0.06,
     );
@@ -484,7 +480,7 @@ export class Course {
         out.setHex(PALETTE.soilDark);
         return out;
       },
-      0.03,
+      0.018,
     );
     island.castShadow = true;
 
@@ -494,7 +490,7 @@ export class Course {
       corridorGrid(this.fairwayLine, hole.fairwayWidth + 0.42, 10, onLand),
       fairwayMat,
       (cx, _cy, cz, _ny, out) => {
-        out.setHex(noise2(Math.floor(cx * 0.4), Math.floor(cz * 0.4)) > 0.5 ? PALETTE.fairwayDark : PALETTE.grassDark);
+        out.setHex(noise2(Math.floor(cx * 0.06), Math.floor(cz * 0.06)) > 0.5 ? PALETTE.fairwayDark : PALETTE.grassDark);
         return out;
       },
       0.05,
@@ -508,7 +504,7 @@ export class Course {
         const along = alongPath(this.fairwayLine, this.pathArc, cx, cz);
         const stripe = Math.floor(along / 7.5) % 2 === 0;
         out.setHex(stripe ? PALETTE.fairway : PALETTE.fairwayDark);
-        out.offsetHSL(0, 0, (noise2(Math.floor(cx * 0.45), Math.floor(cz * 0.45)) - 0.5) * 0.025);
+        out.offsetHSL(0, 0, Math.sin(cx * 0.3 + cz * 0.21) * 0.012);
         return out;
       },
       0.035,
@@ -584,7 +580,7 @@ export class Course {
         ellipseDisc(zone.rx * 0.98, zone.rz * 0.98, 44),
         sandMat,
         (cx, _cy, cz, _ny, out) => {
-          out.setHex(noise2(Math.floor(cx * 0.9), Math.floor(cz * 0.9)) > 0.5 ? PALETTE.sand : PALETTE.sandLight);
+          out.setHex(Math.sin(cx * 0.9 + cz * 0.6) > 0 ? PALETTE.sand : PALETTE.sandLight);
           return out;
         },
         0.05,
@@ -845,7 +841,7 @@ export class Course {
         corridorGrid(cartLine, 0.85, 3, onLand),
         cartMat,
         (cx, _cy, cz, _ny, out) => {
-          out.setHex(noise2(Math.floor(cx * 1.2), Math.floor(cz * 1.2)) > 0.5 ? PALETTE.sand : PALETTE.sandDark);
+          out.setHex(Math.sin(cx * 1.1 + cz * 0.7) > 0 ? PALETTE.sand : PALETTE.sandDark);
           return out;
         },
         0.05,

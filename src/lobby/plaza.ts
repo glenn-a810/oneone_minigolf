@@ -62,8 +62,9 @@ function noise2(x: number, z: number): number {
 }
 
 function turf(base: number, x: number, z: number, out: THREE.Color): THREE.Color {
+  const wave = Math.sin(x * 0.19 + Math.cos(z * 0.15) * 1.5) * Math.cos(z * 0.17 + Math.sin(x * 0.11) * 1.1);
   out.setHex(base);
-  out.offsetHSL(0, 0, (noise2(Math.floor(x * 0.6), Math.floor(z * 0.6)) - 0.5) * 0.06);
+  out.offsetHSL(0, 0, wave * 0.016);
   return out;
 }
 
@@ -174,7 +175,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
   fieldGeo.rotateX(-Math.PI / 2);
   const fieldPainted = paintFaces(
     fieldGeo,
-    (cx, _cy, cz, _ny, out) => turf(noise2(Math.floor(cx * 0.25), Math.floor(cz * 0.25)) > 0.5 ? PALETTE.meadow : PALETTE.meadowDark, cx, cz, out),
+    (cx, _cy, cz, _ny, out) => turf(noise2(Math.floor(cx * 0.03), Math.floor(cz * 0.03)) > 0.45 ? PALETTE.meadow : PALETTE.meadowDark, cx, cz, out),
     0.07,
   );
   const field = new THREE.Mesh(
@@ -216,7 +217,7 @@ export function buildPlaza(root: THREE.Group): PlazaHandle {
     discGrid(5.15, 4, 34),
     (cx, _cy, cz, _ny, out) => {
       const ring = Math.floor(Math.hypot(cx, cz) / 1.3);
-      const alt = noise2(Math.floor(cx * 1.6) + ring, Math.floor(cz * 1.6)) > 0.5;
+      const alt = noise2(ring * 3 + Math.floor(cx * 0.7), Math.floor(cz * 0.7)) > 0.5;
       out.setHex(alt ? PALETTE.stone : PALETTE.stoneLight);
       return out;
     },
