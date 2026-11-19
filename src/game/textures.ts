@@ -338,11 +338,12 @@ export function waterTexture(repeat = 0.15): THREE.Texture | null {
 export function skyTexture(): THREE.Texture | null {
   return makeTexture('sky', 64, 512, (ctx, w, h) => {
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, '#3f8fd6');
-    grad.addColorStop(0.34, '#7dc0ee');
-    grad.addColorStop(0.62, '#bfe4fb');
-    grad.addColorStop(0.78, '#e8f7ff');
-    grad.addColorStop(1, '#dff3e4');
+    grad.addColorStop(0, '#2f7fcb');
+    grad.addColorStop(0.3, '#57a7df');
+    grad.addColorStop(0.55, '#8cc9ec');
+    grad.addColorStop(0.74, '#c9e8f8');
+    grad.addColorStop(0.9, '#e7f5e8');
+    grad.addColorStop(1, '#cfe8cd');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
   });

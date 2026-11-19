@@ -45,19 +45,19 @@ const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 320);
 
 /** 플레이룸(미니골프) 씬 */
 const gameScene = new THREE.Scene();
-gameScene.background = new THREE.Color(0xbfe6ff);
-gameScene.fog = new THREE.Fog(0xd6edff, 90, 230);
+gameScene.background = new THREE.Color(0xbfe4fb);
+gameScene.fog = new THREE.Fog(0xcfe9fb, 105, 265);
 buildSky(gameScene, {
   radius: 170,
   cloudCount: 10,
   sunDirection: new THREE.Vector3(0.42, 0.66, 0.46),
 });
 
-const gameHemi = new THREE.HemisphereLight(0xe6f6ff, 0x7ea76b, 0.62);
+const gameHemi = new THREE.HemisphereLight(0xdcefff, 0x8db46a, 0.85);
 gameScene.add(gameHemi);
 
-const gameSun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-gameSun.position.set(18, 26, 16);
+const gameSun = new THREE.DirectionalLight(0xfff3dc, 2.55);
+gameSun.position.set(20, 30, 18);
 gameSun.castShadow = true;
 gameSun.shadow.mapSize.set(2048, 2048);
 gameSun.shadow.camera.left = -28;
@@ -71,26 +71,26 @@ gameSun.shadow.normalBias = 0.035;
 gameScene.add(gameSun);
 gameScene.add(gameSun.target);
 
-const gameFill = new THREE.DirectionalLight(0xc6e4ff, 0.45);
-gameFill.position.set(-14, 10, -18);
+const gameFill = new THREE.DirectionalLight(0xcfe6ff, 0.4);
+gameFill.position.set(-16, 12, -20);
 gameScene.add(gameFill);
 
 // ---------------------------------------------------------------- 대기실 씬
 
 const lobbyScene = new THREE.Scene();
-lobbyScene.background = new THREE.Color(0xcdeeff);
-lobbyScene.fog = new THREE.Fog(0xd9f1ff, 70, 190);
+lobbyScene.background = new THREE.Color(0xc4e7fb);
+lobbyScene.fog = new THREE.Fog(0xd2ecfb, 85, 240);
 buildSky(lobbyScene, {
   radius: 190,
   cloudCount: 8,
   sunDirection: new THREE.Vector3(0.5, 0.6, 0.42),
 });
 
-const lobbyHemi = new THREE.HemisphereLight(0xffffff, 0x93c878, 0.7);
+const lobbyHemi = new THREE.HemisphereLight(0xe4f4ff, 0x93c878, 0.85);
 lobbyScene.add(lobbyHemi);
 
-const lobbySun = new THREE.DirectionalLight(0xfff5e0, 2.1);
-lobbySun.position.set(16, 22, 12);
+const lobbySun = new THREE.DirectionalLight(0xfff4dc, 2.5);
+lobbySun.position.set(17, 24, 13);
 lobbySun.castShadow = true;
 lobbySun.shadow.mapSize.set(2048, 2048);
 lobbySun.shadow.camera.left = -26;
@@ -104,8 +104,8 @@ lobbySun.shadow.normalBias = 0.04;
 lobbyScene.add(lobbySun);
 lobbyScene.add(lobbySun.target);
 
-const lobbyFill = new THREE.DirectionalLight(0xd6ecff, 0.5);
-lobbyFill.position.set(-14, 9, -16);
+const lobbyFill = new THREE.DirectionalLight(0xd6ecff, 0.42);
+lobbyFill.position.set(-15, 10, -17);
 lobbyScene.add(lobbyFill);
 
 // ---------------------------------------------------------------- 게임/오디오/네트워크

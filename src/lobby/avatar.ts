@@ -1,9 +1,16 @@
 import * as THREE from 'three';
+import { PALETTE, blob, buildProp, column, lump, plank, type PropPart } from '../game/props';
 
 /** 대기실 캐릭터(골퍼)와 이름표·이모지 말풍선 스프라이트. */
 
-const SKIN = 0xffe0bd;
-const INK = 0x1d3038;
+const SKIN = 0xffdfb8;
+const SKIN_DARK = 0xe9bc90;
+const INK = 0x243238;
+const TROUSER = 0x36485c;
+const TROUSER_DARK = 0x2a3949;
+
+/** 클럽 종류 — 홀드한 채의 헤드 모양이 달라진다 */
+export type ClubLook = 'driver' | 'iron' | 'putter';
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -130,7 +137,7 @@ export function emojiBubbleSprite(char: string): THREE.Sprite | null {
 
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(0.64, 0.64, 1);
+  sprite.scale.set(0.72, 0.72, 1);
   sprite.renderOrder = 4;
   return sprite;
 }
@@ -142,17 +149,25 @@ export interface GolferOptions {
   glow?: boolean;
   /** 골프채를 들게 한다 */
   club?: boolean;
+  /** 처음 든 클럽 종류 (기본 아이언) */
+  clubType?: ClubLook;
 }
 
-/** 통통한 골퍼 캐릭터 (몸통 색 = 선택한 공 색상) */
+/**
+ * Synty POLYGON 톤의 골퍼.
+ *
+ * 바이저 모자·얼굴·목·카라 셔츠·소매·벨트·바지·신발·장갑·클럽(샤프트·호젤·헤드)까지
+ * 파츠를 나눠 각진 실루엣을 만든다. 파츠는 정점 색상으로 합쳐 드로우콜을 최소화한다.
+ */
 export class Golfer {
   readonly group = new THREE.Group();
 
   private readonly root = new THREE.Group();
   private readonly armL = new THREE.Group();
   private readonly armR = new THREE.Group();
-  private readonly footL: THREE.Mesh;
-  private readonly footR: THREE.Mesh;
+  private readonly footL: THREE.Group;
+  private readonly footR: THREE.Group;
+  private readonly clubHeads: Record<ClubLook, THREE.Group>;
   private readonly ring: THREE.Mesh | null;
   private readonly holdsClub: boolean;
   private label: THREE.Sprite | null = null;
@@ -165,102 +180,50 @@ export class Golfer {
 
   constructor(options: GolferOptions) {
     const base = new THREE.Color(options.color);
-    const deep = base.clone().multiplyScalar(0.66);
-
-    const bodyMat = this.track(new THREE.MeshStandardMaterial({ color: base, roughness: 0.44, metalness: 0.05 }));
-    const deepMat = this.track(new THREE.MeshStandardMaterial({ color: deep, roughness: 0.55 }));
-    const skinMat = this.track(new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.72 }));
-    const inkMat = this.track(new THREE.MeshStandardMaterial({ color: INK, roughness: 0.55 }));
-    const whiteMat = this.track(new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.55 }));
-    const cheekMat = this.track(new THREE.MeshStandardMaterial({ color: 0xffb3a2, roughness: 0.85 }));
-    const clubMat = this.track(new THREE.MeshStandardMaterial({ color: 0xc8ced4, roughness: 0.35, metalness: 0.55 }));
+    const hex = base.getHex();
+    const shirt = hex;
 
     this.root.position.y = 0;
     this.group.add(this.root);
 
-    // 몸통
-    const torso = this.create(new THREE.CapsuleGeometry(0.21, 0.22, 6, 18), bodyMat);
-    torso.position.y = 0.52;
-    this.root.add(torso);
+    // 몸통·다리·머리 (색상별로 캐시되는 합성 메시)
+    const body = buildProp(`golfer-body-${hex.toString(16)}`, buildBody(shirt));
+    body.position.y = 0;
+    this.root.add(body);
 
-    // 다리
-    const legGeo = new THREE.CapsuleGeometry(0.065, 0.1, 4, 10);
-    [-0.09, 0.09].forEach((x) => {
-      const leg = this.create(legGeo, deepMat);
-      leg.position.set(x, 0.24, 0);
-      this.root.add(leg);
-    });
-
-    // 발
-    const footGeo = new THREE.SphereGeometry(0.078, 14, 10);
-    this.footL = this.create(footGeo, whiteMat);
-    this.footL.scale.set(1, 0.72, 1.3);
-    this.footL.position.set(-0.09, 0.075, 0.03);
-    this.footR = this.create(footGeo, whiteMat);
-    this.footR.scale.set(1, 0.72, 1.3);
-    this.footR.position.set(0.09, 0.075, 0.03);
+    // 신발 (걸음/스윙 때 따로 움직인다)
+    const shoeParts = buildShoe();
+    this.footL = buildProp('golfer-shoe', shoeParts);
+    this.footL.position.set(-0.115, 0.075, 0.02);
+    this.footR = buildProp('golfer-shoe', shoeParts);
+    this.footR.position.set(0.115, 0.075, 0.02);
     this.root.add(this.footL, this.footR);
 
-    // 머리
-    const head = this.create(new THREE.SphereGeometry(0.19, 22, 18), skinMat);
-    head.position.y = 0.96;
-    this.root.add(head);
-
-    // 볼
-    const cheekGeo = new THREE.SphereGeometry(0.034, 10, 8);
-    [-0.125, 0.125].forEach((x) => {
-      const cheek = this.create(cheekGeo, cheekMat);
-      cheek.position.set(x, 0.905, 0.115);
-      this.root.add(cheek);
-    });
-
-    // 눈
-    const eyeGeo = new THREE.SphereGeometry(0.032, 12, 10);
-    [-0.066, 0.066].forEach((x) => {
-      const eye = this.create(eyeGeo, inkMat);
-      eye.position.set(x, 0.945, 0.168);
-      this.root.add(eye);
-    });
-
-    // 모자 (챙 + 돔)
-    const brim = this.create(new THREE.CylinderGeometry(0.272, 0.272, 0.024, 26), whiteMat);
-    brim.position.y = 0.985;
-    this.root.add(brim);
-    const dome = this.create(
-      new THREE.SphereGeometry(0.203, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52),
-      whiteMat,
-    );
-    dome.position.y = 0.985;
-    this.root.add(dome);
-    const button = this.create(new THREE.SphereGeometry(0.024, 10, 8), deepMat);
-    button.position.y = 1.174;
-    this.root.add(button);
-
-    // 팔
-    this.armL.position.set(-0.238, 0.7, 0);
-    this.armR.position.set(0.238, 0.7, 0);
-    this.armL.rotation.z = 0.2;
-    this.armR.rotation.z = -0.2;
-    const armGeo = new THREE.CapsuleGeometry(0.055, 0.15, 4, 10);
-    const armMeshL = this.create(armGeo, bodyMat);
-    armMeshL.position.y = -0.13;
-    const armMeshR = this.create(armGeo, bodyMat);
-    armMeshR.position.y = -0.13;
-    this.armL.add(armMeshL);
-    this.armR.add(armMeshR);
+    // 팔 (어깨를 축으로 스윙)
+    this.armL.position.set(-0.255, 1.34, 0);
+    this.armR.position.set(0.255, 1.34, 0);
+    this.armL.rotation.z = 0.16;
+    this.armR.rotation.z = -0.16;
+    this.armL.add(buildProp(`golfer-arm-left-${hex.toString(16)}`, buildArm(shirt, true)));
+    this.armR.add(buildProp(`golfer-arm-right-${hex.toString(16)}`, buildArm(shirt, false)));
     this.root.add(this.armL, this.armR);
+
+    this.clubHeads = {
+      driver: buildProp('golfer-club-head-driver', buildClubHead('driver')),
+      iron: buildProp('golfer-club-head-iron', buildClubHead('iron')),
+      putter: buildProp('golfer-club-head-putter', buildClubHead('putter')),
+    };
 
     if (options.club) {
       this.holdsClub = true;
-      const shaft = this.create(new THREE.CylinderGeometry(0.012, 0.012, 0.62, 8), clubMat);
-      shaft.position.set(0, -0.45, 0.02);
-      shaft.rotation.x = 0.32;
-      const headGeo = new THREE.BoxGeometry(0.13, 0.05, 0.06);
-      const clubHead = this.create(headGeo, clubMat);
-      clubHead.position.set(0, -0.76, 0.13);
-      clubHead.rotation.x = 0.32;
-      this.armR.add(shaft, clubHead);
-      this.armR.rotation.x = -0.26;
+      const clubGroup = new THREE.Group();
+      clubGroup.add(buildProp('golfer-club', buildShaft()));
+      Object.entries(this.clubHeads).forEach(([look, head]) => {
+        head.visible = look === (options.clubType ?? 'iron');
+        clubGroup.add(head);
+      });
+      this.armR.add(clubGroup);
+      this.armR.rotation.x = -0.3;
     } else {
       this.holdsClub = false;
     }
@@ -280,7 +243,7 @@ export class Golfer {
           roughness: 0.4,
         }),
       );
-      const ringGeo = this.track(new THREE.TorusGeometry(0.4, 0.028, 8, 34));
+      const ringGeo = this.track(new THREE.TorusGeometry(0.46, 0.03, 8, 34));
       this.ring = new THREE.Mesh(ringGeo, ringMat);
       this.ring.rotation.x = -Math.PI / 2;
       this.ring.position.y = 0.02;
@@ -295,13 +258,6 @@ export class Golfer {
     return item;
   }
 
-  private create(geometry: THREE.BufferGeometry, material: THREE.Material): THREE.Mesh {
-    this.track(geometry);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    return mesh;
-  }
-
   setName(name: string, color: string): void {
     if (this.label) {
       this.group.remove(this.label);
@@ -312,7 +268,7 @@ export class Golfer {
     }
     const label = createLabelSprite(name, color);
     if (label) {
-      label.position.set(0, 1.52, 0);
+      label.position.set(0, 2.12, 0);
       this.group.add(label);
       this.label = label;
     }
@@ -320,6 +276,14 @@ export class Golfer {
 
   setVisible(visible: boolean): void {
     this.group.visible = visible;
+  }
+
+  /** 든 클럽의 헤드 모양 전환 (드라이버/아이언/퍼터) */
+  setClubLook(look: ClubLook): void {
+    if (!this.holdsClub) return;
+    Object.entries(this.clubHeads).forEach(([key, head]) => {
+      head.visible = key === look;
+    });
   }
 
   /** 어드레스 자세 (공 옆에 서서 채를 겨누는 자세) */
@@ -341,11 +305,11 @@ export class Golfer {
   private swingPose(t: number): { arm: number; torso: number; lean: number } {
     type Key = { t: number; arm: number; torso: number; lean: number };
     const keys: Key[] = [
-      { t: 0, arm: -0.26, torso: 0, lean: 0 },
+      { t: 0, arm: -0.3, torso: 0, lean: 0 },
       { t: 0.42, arm: -1.85, torso: -0.36, lean: -0.06 },
       { t: 0.62, arm: 0.5, torso: 0.18, lean: 0.04 },
       { t: 0.78, arm: 1.35, torso: 0.34, lean: 0.08 },
-      { t: 1, arm: -0.26, torso: 0, lean: 0 },
+      { t: 1, arm: -0.3, torso: 0, lean: 0 },
     ];
     for (let i = 0; i < keys.length - 1; i += 1) {
       const a = keys[i];
@@ -360,7 +324,7 @@ export class Golfer {
         };
       }
     }
-    return { arm: -0.26, torso: 0, lean: 0 };
+    return { arm: -0.3, torso: 0, lean: 0 };
   }
 
   update(dt: number, moving: boolean): void {
@@ -376,8 +340,8 @@ export class Golfer {
       this.root.rotation.y = pose.torso;
       this.root.rotation.z = pose.lean;
       this.root.position.y = -pose.lean * 0.12;
-      this.footL.position.z = 0.03 + pose.lean * 0.2;
-      this.footR.position.z = 0.03 - pose.lean * 0.2;
+      this.footL.position.z = 0.02 + pose.lean * 0.2;
+      this.footR.position.z = 0.02 - pose.lean * 0.2;
       this.footL.position.y = 0.075;
       this.footR.position.y = 0.075;
       if (t >= 1) {
@@ -385,13 +349,13 @@ export class Golfer {
         this.root.rotation.y = 0;
         this.root.rotation.z = 0;
         this.root.position.y = 0;
-        this.armR.rotation.x = this.holdsClub ? -0.26 : 0;
+        this.armR.rotation.x = this.holdsClub ? -0.3 : 0;
       }
     } else if (this.addressing && this.holdsClub) {
       // 어드레스: 채를 살짝 앞으로 겨누고 상체를 숙인다
       const breathe = Math.sin(this.clock * 1.6) * 0.02;
-      this.armR.rotation.x = -0.42 + breathe;
-      this.armL.rotation.x = -0.3 + breathe;
+      this.armR.rotation.x = -0.46 + breathe;
+      this.armL.rotation.x = -0.32 + breathe;
       this.root.rotation.y = 0;
     } else {
       if (moving) this.phase += dt * 9.6;
@@ -401,9 +365,9 @@ export class Golfer {
         : Math.sin(this.clock * 2.1) * 0.008;
       this.armL.rotation.x = swing * 0.5;
       if (!this.holdsClub) this.armR.rotation.x = -swing * 0.4;
-      else this.armR.rotation.x = -0.26;
-      this.footL.position.z = 0.03 + swing * 0.085;
-      this.footR.position.z = 0.03 - swing * 0.085;
+      else this.armR.rotation.x = -0.3;
+      this.footL.position.z = 0.02 + swing * 0.085;
+      this.footR.position.z = 0.02 - swing * 0.085;
       this.footL.position.y = 0.075 + Math.max(0, swing) * 0.04;
       this.footR.position.y = 0.075 + Math.max(0, -swing) * 0.04;
     }
@@ -427,4 +391,139 @@ export class Golfer {
     this.disposables.length = 0;
     this.group.clear();
   }
+}
+
+// ---------------------------------------------------------------- 몸 파츠
+
+function buildBody(shirt: number): PropPart[] {
+  const parts: PropPart[] = [];
+
+  // 바지 다리
+  [-0.115, 0.115].forEach((x) => {
+    parts.push({ geo: column(0.088, 0.1, 0.44, 6), color: TROUSER, pos: [x, 0.68, 0], jitter: 0.05, shade: 0.18 });
+    parts.push({ geo: column(0.076, 0.088, 0.42, 6), color: TROUSER, pos: [x, 0.3, 0], jitter: 0.05, shade: 0.18 });
+    parts.push({ geo: column(0.092, 0.092, 0.07, 6), color: TROUSER_DARK, pos: [x, 0.14, 0], jitter: 0.04 });
+    // 무릎 접힘
+    parts.push({ geo: column(0.094, 0.094, 0.035, 6), color: TROUSER_DARK, pos: [x, 0.49, 0], jitter: 0.03 });
+  });
+
+  // 골반 + 벨트
+  parts.push({ geo: plank(0.34, 0.2, 0.24), color: TROUSER, pos: [0, 0.92, 0], jitter: 0.05 });
+  parts.push({ geo: plank(0.36, 0.07, 0.26), color: 0x2b1f18, pos: [0, 1.0, 0], jitter: 0.04 });
+  parts.push({ geo: plank(0.09, 0.08, 0.03), color: PALETTE.gold, pos: [0, 1.0, 0.13], bucket: 'metal', jitter: 0.03 });
+
+  // 셔츠 몸통 (육각 기둥 — 앞면이 평평하게)
+  parts.push({
+    geo: column(0.215, 0.245, 0.48, 6),
+    color: shirt,
+    pos: [0, 1.24, 0],
+    rot: [0, Math.PI / 6, 0],
+    jitter: 0.06,
+    shade: 0.2,
+  });
+  // 셔츠 밑단
+  parts.push({
+    geo: column(0.25, 0.255, 0.06, 6),
+    color: shirt,
+    pos: [0, 1.01, 0],
+    rot: [0, Math.PI / 6, 0],
+    jitter: 0.04,
+  });
+  // 가슴 주머니 자리 + 단추 여밈
+  parts.push({ geo: plank(0.05, 0.3, 0.03), color: 0xffffff, pos: [0, 1.28, 0.2], jitter: 0.03 });
+  [1.18, 1.28, 1.38].forEach((y) => {
+    parts.push({ geo: lump(0.022), color: PALETTE.cream, pos: [0.03, y, 0.215], jitter: 0.02 });
+  });
+  // 어깨 패드
+  parts.push({ geo: column(0.11, 0.12, 0.1, 6), color: shirt, pos: [-0.24, 1.4, 0], jitter: 0.05 });
+  parts.push({ geo: column(0.11, 0.12, 0.1, 6), color: shirt, pos: [0.24, 1.4, 0], jitter: 0.05 });
+  // 카라
+  parts.push({ geo: column(0.115, 0.135, 0.08, 6), color: 0xffffff, pos: [0, 1.47, 0], rot: [0, Math.PI / 6, 0], jitter: 0.03 });
+  parts.push({ geo: plank(0.12, 0.06, 0.12), color: 0xffffff, pos: [0, 1.45, 0.12], rot: [0.3, 0, 0], jitter: 0.03 });
+
+  // 목
+  parts.push({ geo: column(0.072, 0.082, 0.12, 6), color: SKIN_DARK, pos: [0, 1.5, 0], jitter: 0.03 });
+
+  // 머리 (각진 두상 + 턱)
+  parts.push({ geo: plank(0.26, 0.24, 0.25), color: SKIN, pos: [0, 1.64, 0], jitter: 0.04, shade: 0.12 });
+  parts.push({ geo: plank(0.22, 0.08, 0.22), color: SKIN_DARK, pos: [0, 1.52, 0.005], jitter: 0.03 });
+  parts.push({ geo: plank(0.06, 0.07, 0.05), color: SKIN, pos: [0, 1.6, 0.135], jitter: 0.03 });
+  [-0.14, 0.14].forEach((x) => {
+    parts.push({ geo: plank(0.035, 0.09, 0.07), color: SKIN_DARK, pos: [x, 1.63, 0], jitter: 0.03 });
+    // 눈 + 눈썹
+    parts.push({ geo: plank(0.045, 0.055, 0.02), color: INK, pos: [x * 0.42, 1.665, 0.126], jitter: 0.02 });
+    parts.push({ geo: plank(0.065, 0.018, 0.025), color: 0x3b2a20, pos: [x * 0.42, 1.708, 0.126], jitter: 0.02 });
+  });
+  parts.push({ geo: plank(0.06, 0.014, 0.02), color: 0x8a5f52, pos: [0, 1.555, 0.126], jitter: 0.02 });
+  // 헤어 (모자 밖으로 나온 옆·뒷머리)
+  parts.push({ geo: plank(0.26, 0.06, 0.26), color: 0x4a3527, pos: [0, 1.74, -0.01], jitter: 0.05 });
+  parts.push({ geo: plank(0.26, 0.1, 0.05), color: 0x4a3527, pos: [0, 1.66, -0.13], jitter: 0.05 });
+
+  // 바이저 모자 (챙 + 크라운 + 밴드)
+  parts.push({ geo: column(0.152, 0.158, 0.13, 6), color: 0xffffff, pos: [0, 1.82, -0.01], rot: [0, Math.PI / 6, 0], jitter: 0.04 });
+  parts.push({ geo: column(0.16, 0.162, 0.04, 6), color: shirt, pos: [0, 1.765, -0.01], rot: [0, Math.PI / 6, 0], jitter: 0.03 });
+  parts.push({ geo: plank(0.3, 0.03, 0.2), color: 0xffffff, pos: [0, 1.762, 0.16], rot: [-0.14, 0, 0], jitter: 0.03 });
+  parts.push({ geo: lump(0.032), color: shirt, pos: [0, 1.89, -0.01], jitter: 0.02 });
+
+  return parts;
+}
+
+function buildShoe(): PropPart[] {
+  return [
+    { geo: plank(0.135, 0.05, 0.3), color: PALETTE.creamDark, pos: [0, -0.05, 0.02], jitter: 0.03 },
+    { geo: plank(0.125, 0.09, 0.24), color: 0xffffff, pos: [0, 0.0, -0.01], jitter: 0.04 },
+    { geo: plank(0.115, 0.07, 0.1), color: 0xffffff, pos: [0, -0.015, 0.13], jitter: 0.04 },
+    { geo: plank(0.09, 0.02, 0.07), color: PALETTE.metalDark, pos: [0, 0.045, 0.06], jitter: 0.02 },
+    { geo: column(0.062, 0.068, 0.05, 6), color: PALETTE.cream, pos: [0, 0.07, -0.02], jitter: 0.03 },
+  ];
+}
+
+function buildArm(shirt: number, left: boolean): PropPart[] {
+  const parts: PropPart[] = [
+    { geo: column(0.078, 0.088, 0.2, 6), color: shirt, pos: [0, -0.1, 0], jitter: 0.05, shade: 0.18 },
+    { geo: column(0.09, 0.09, 0.045, 6), color: 0xffffff, pos: [0, -0.21, 0], jitter: 0.03 },
+    { geo: column(0.058, 0.066, 0.16, 6), color: SKIN, pos: [0, -0.31, 0], jitter: 0.04 },
+    { geo: column(0.052, 0.058, 0.17, 6), color: SKIN, pos: [0, -0.45, 0], jitter: 0.04 },
+    { geo: column(0.062, 0.062, 0.03, 6), color: 0xffffff, pos: [0, -0.535, 0], jitter: 0.02 },
+    { geo: plank(0.085, 0.11, 0.09), color: left ? PALETTE.cream : SKIN, pos: [0, -0.6, 0.01], jitter: 0.03 },
+  ];
+  return parts;
+}
+
+function buildShaft(): PropPart[] {
+  return [
+    { geo: column(0.019, 0.019, 0.17, 6), color: 0x2b3138, pos: [0, -0.56, 0.02], rot: [0.1, 0, 0], jitter: 0.03 },
+    { geo: column(0.013, 0.016, 0.62, 6), color: PALETTE.metal, pos: [0, -0.93, 0.12], rot: [0.24, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: column(0.017, 0.02, 0.06, 6), color: PALETTE.metalDark, pos: [0, -1.19, 0.2], rot: [0.24, 0, 0], bucket: 'metal', jitter: 0.03 },
+  ];
+}
+
+function buildClubHead(look: ClubLook): PropPart[] {
+  if (look === 'driver') {
+    return [
+      { geo: plank(0.19, 0.11, 0.15), color: 0x3a4652, pos: [0, -1.23, 0.235], rot: [0.2, 0.1, 0], jitter: 0.05 },
+      { geo: plank(0.2, 0.03, 0.15), color: PALETTE.metal, pos: [0, -1.28, 0.235], rot: [0.2, 0.1, 0], bucket: 'metal', jitter: 0.03 },
+      { geo: plank(0.06, 0.04, 0.09), color: PALETTE.coral, pos: [0.09, -1.215, 0.2], jitter: 0.03 },
+    ];
+  }
+  if (look === 'putter') {
+    return [
+      { geo: plank(0.2, 0.05, 0.1), color: 0x3a4652, pos: [0, -1.235, 0.215], rot: [0.1, 0, 0], jitter: 0.04 },
+      { geo: plank(0.16, 0.015, 0.09), color: PALETTE.cream, pos: [0, -1.26, 0.215], jitter: 0.03 },
+      { geo: plank(0.03, 0.1, 0.03), color: PALETTE.metalDark, pos: [0, -1.2, 0.19], bucket: 'metal', jitter: 0.02 },
+    ];
+  }
+  return [
+    { geo: plank(0.13, 0.1, 0.03), color: PALETTE.metal, pos: [0, -1.235, 0.215], rot: [0.28, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: plank(0.11, 0.04, 0.05), color: PALETTE.metalDark, pos: [0, -1.29, 0.225], rot: [0.28, 0, 0], bucket: 'metal', jitter: 0.03 },
+    { geo: lump(0.03), color: PALETTE.metalDark, pos: [0, -1.19, 0.2], bucket: 'metal', jitter: 0.02 },
+  ];
+}
+
+/** 공용: 잔디 위에 서 있는 골퍼의 대략적인 키 (카메라·라벨 배치 참고용) */
+export const GOLFER_HEIGHT = 1.9;
+
+/** 작은 나무·바위 장식용 헬퍼가 필요할 때 쓰는 빈 덩어리 (캐시 공유) */
+export function simpleBlob(radius = 0.4): THREE.Group {
+  return buildProp(`simple-blob-${radius}`, [{ geo: blob(radius), color: PALETTE.leaf, jitter: 0.1 }]);
 }

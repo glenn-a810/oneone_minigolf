@@ -3,9 +3,9 @@ import type { AudioEngine } from '../game/audio';
 import type { PlayerIdentity } from '../game/types';
 import type { LobbySnapshot, NetMessage, Realtime } from '../net/realtime';
 import { BALL_COLORS, LOBBY_EMOJIS } from '../game/constants';
-import { createCloud, createRock, createTree } from '../game/scenery';
-import { roughTexture, stoneTexture, waterTexture, woodTexture } from '../game/textures';
-import { Golfer, createLabelSprite, emojiBubbleSprite } from './avatar';
+import { Golfer, emojiBubbleSprite } from './avatar';
+import { PLAZA_GATE, buildPlaza, type PlazaHandle } from './plaza';
+import { mergeStaticMeshes } from '../game/props';
 
 /**
  * 3D 대기실(클럽하우스 광장).
@@ -42,9 +42,8 @@ export interface LobbyOptions {
   events?: LobbyEvents;
 }
 
-const PLAZA_RADIUS = 15.2;
 const BOUND = 13.6;
-const GATE = new THREE.Vector3(0, 0, -9);
+const GATE = PLAZA_GATE;
 const GATE_TRIGGER = 1.35;
 const WALK_SPEED = 3.7;
 const CAM_DISTANCE = 9.4;
@@ -100,16 +99,6 @@ const GUEST_PROFILE = [
 
 const GUEST_EMOJIS = ['👋', '👏', '⛳', '😂', '🎉', '🔥'] as const;
 
-/** 재현 가능한 난수 (장식 배치가 새로고침마다 흔들리지 않도록) */
-function seeded(seed: number): () => number {
-  let state = seed % 2147483647;
-  if (state <= 0) state += 2147483646;
-  return () => {
-    state = (state * 16807) % 2147483647;
-    return (state - 1) / 2147483646;
-  };
-}
-
 const _tmp = new THREE.Vector3();
 
 export class Lobby {
@@ -122,14 +111,12 @@ export class Lobby {
 
   private readonly root = new THREE.Group();
   private readonly plaza = new THREE.Group();
-  private readonly gateGroup = new THREE.Group();
+  private gateGroup: THREE.Group = new THREE.Group();
   private readonly obstacles: Obstacle[] = [];
   private readonly disposables: Array<{ dispose: () => void }> = [];
 
-  private gateRing: THREE.Mesh | null = null;
-  private gateInner: THREE.Mesh | null = null;
-  private gateHalo: THREE.Mesh | null = null;
-  private gateGlow: THREE.PointLight | null = null;
+  private plazaHandle: PlazaHandle | null = null;
+  private mergedGeometries: THREE.BufferGeometry[] = [];
 
   private identity: PlayerIdentity | null = null;
   private localGolfer: Golfer | null = null;
@@ -154,7 +141,6 @@ export class Lobby {
   private time = 0;
   private netTimer = 0;
   private previewAngle = 0.55;
-  private pondWater: THREE.Mesh | null = null;
   private enterCooldown = 0;
   private nearGate = false;
   private cameraSnap = true;
@@ -173,7 +159,6 @@ export class Lobby {
     this.scene.add(this.root);
 
     this.buildPlaza();
-    this.buildGate();
     this.buildGuests();
 
     this.realtime.onMessage((message) => this.handleMessage(message));
@@ -285,440 +270,12 @@ export class Lobby {
 
   // ---------------------------------------------------------------- 광장 만들기
 
-  private track<T extends { dispose: () => void }>(item: T): T {
-    this.disposables.push(item);
-    return item;
-  }
-
-  private mesh(
-    geometry: THREE.BufferGeometry,
-    material: THREE.Material,
-    cast = true,
-    receive = true,
-  ): THREE.Mesh {
-    this.track(geometry);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = cast;
-    mesh.receiveShadow = receive;
-    return mesh;
-  }
-
   private buildPlaza(): void {
-    const rand = seeded(20261117);
-
-    const grassTex = roughTexture(5);
-    const stoneTex = stoneTexture(7);
-    const woodTex = woodTexture(1);
-    const grass = this.track(
-      new THREE.MeshStandardMaterial({ color: grassTex ? 0xffffff : 0x8bdc72, map: grassTex, roughness: 0.97 }),
-    );
-    const grassDark = this.track(new THREE.MeshStandardMaterial({ color: 0x74c95f, roughness: 0.98 }));
-    const stone = this.track(
-      new THREE.MeshStandardMaterial({ color: stoneTex ? 0xffffff : 0xf0e7d4, map: stoneTex, roughness: 0.9 }),
-    );
-    const stoneDeep = this.track(new THREE.MeshStandardMaterial({ color: 0xd8c9ac, roughness: 0.92 }));
-    const wood = this.track(
-      new THREE.MeshStandardMaterial({ color: woodTex ? 0xffffff : 0xbf8b5c, map: woodTex, roughness: 0.85 }),
-    );
-    const woodDark = this.track(new THREE.MeshStandardMaterial({ color: 0x8a623f, roughness: 0.9 }));
-    const hedgeMat = this.track(new THREE.MeshStandardMaterial({ color: 0x4d9c4a, roughness: 0.95, flatShading: true }));
-    const waterTex = waterTexture(1.6);
-    const waterMat = this.track(
-      new THREE.MeshStandardMaterial({
-        color: waterTex ? 0xffffff : 0x33b3e6,
-        map: waterTex,
-        roughness: 0.12,
-        metalness: 0.25,
-        transparent: true,
-        opacity: 0.92,
-      }),
-    );
-    const waterShine = this.track(
-      new THREE.MeshStandardMaterial({
-        color: 0xbfefff,
-        roughness: 0.05,
-        metalness: 0.4,
-        transparent: true,
-        opacity: 0.5,
-      }),
-    );
-    const bulbMat = this.track(
-      new THREE.MeshStandardMaterial({ color: 0xfff3c4, emissive: 0xffe08a, emissiveIntensity: 1.4, roughness: 0.4 }),
-    );
-    const cream = this.track(new THREE.MeshStandardMaterial({ color: 0xfdf6e6, roughness: 0.85 }));
-    const roofMat = this.track(new THREE.MeshStandardMaterial({ color: 0xff8a6b, roughness: 0.75 }));
-    const glassMat = this.track(
-      new THREE.MeshStandardMaterial({ color: 0x9fd8e8, roughness: 0.15, metalness: 0.35 }),
-    );
-    const lilyMat = this.track(new THREE.MeshStandardMaterial({ color: 0x6cc45c, roughness: 0.85 }));
-    const flowerMats = [0xff8fa8, 0xffd166, 0xfff4f0, 0xc79bff, 0x7fd6ff].map((color) =>
-      this.track(new THREE.MeshStandardMaterial({ color, roughness: 0.7 })),
-    );
-
-    // 잔디 광장 (원형)
-    const ground = this.mesh(
-      new THREE.CylinderGeometry(PLAZA_RADIUS, PLAZA_RADIUS - 1.1, 1.8, 72),
-      grass,
-      false,
-      true,
-    );
-    ground.position.y = -0.9;
-    this.plaza.add(ground);
-
-    const lip = this.mesh(
-      new THREE.CylinderGeometry(PLAZA_RADIUS + 0.5, PLAZA_RADIUS + 0.9, 0.8, 72),
-      grassDark,
-      false,
-      false,
-    );
-    lip.position.y = -0.42;
-    this.plaza.add(lip);
-
-    // 중앙 광장 바닥 (돌)
-    const stoneFloor = this.mesh(new THREE.CircleGeometry(5.1, 56), stone, false, true);
-    stoneFloor.rotation.x = -Math.PI / 2;
-    stoneFloor.position.y = 0.012;
-    this.plaza.add(stoneFloor);
-
-    const stoneRing = this.mesh(new THREE.TorusGeometry(5.1, 0.075, 8, 72), stoneDeep, false, true);
-    stoneRing.rotation.x = -Math.PI / 2;
-    stoneRing.position.y = 0.03;
-    this.plaza.add(stoneRing);
-
-    const innerRing = this.mesh(new THREE.TorusGeometry(2.2, 0.05, 8, 56), stoneDeep, false, false);
-    innerRing.rotation.x = -Math.PI / 2;
-    innerRing.position.y = 0.025;
-    this.plaza.add(innerRing);
-
-    // 게이트로 이어지는 길
-    const path = this.mesh(new THREE.PlaneGeometry(2.8, 6.4), stone, false, true);
-    path.rotation.x = -Math.PI / 2;
-    path.position.set(0, 0.016, -7.4);
-    this.plaza.add(path);
-
-    // 연못
-    const pond = this.mesh(new THREE.CircleGeometry(2.7, 44), waterMat, false, false);
-    pond.rotation.x = -Math.PI / 2;
-    pond.position.set(7.8, 0.018, -3.4);
-    this.plaza.add(pond);
-    this.pondWater = pond;
-
-    const pondRim = this.mesh(new THREE.TorusGeometry(2.72, 0.16, 10, 48), stoneDeep, false, true);
-    pondRim.rotation.x = -Math.PI / 2;
-    pondRim.position.set(7.8, 0.06, -3.4);
-    this.plaza.add(pondRim);
-
-    for (let i = 0; i < 3; i += 1) {
-      const pad = this.mesh(new THREE.CircleGeometry(0.34 + rand() * 0.16, 18), lilyMat, false, false);
-      pad.rotation.x = -Math.PI / 2;
-      const angle = rand() * Math.PI * 2;
-      const radius = 0.7 + rand() * 1.2;
-      pad.position.set(7.8 + Math.cos(angle) * radius, 0.03, -3.4 + Math.sin(angle) * radius);
-      this.plaza.add(pad);
-    }
-
-    const shine = this.mesh(new THREE.CircleGeometry(1.1, 26), waterShine, false, false);
-    shine.rotation.x = -Math.PI / 2;
-    shine.position.set(6.9, 0.026, -4.1);
-    this.plaza.add(shine);
-
-    this.obstacles.push({ x: 7.8, z: -3.4, r: 2.85 });
-
-    // 클럽하우스 건물
-    const houseX = -9.2;
-    const houseZ = 2.6;
-    const house = new THREE.Group();
-    house.position.set(houseX, 0, houseZ);
-    house.rotation.y = 0.5;
-
-    const wall = this.mesh(new THREE.BoxGeometry(4.6, 2.4, 3.4), cream);
-    wall.position.y = 1.2;
-    house.add(wall);
-
-    const roof = this.mesh(new THREE.ConeGeometry(3.05, 1.45, 4), roofMat);
-    roof.position.y = 3.0;
-    roof.rotation.y = Math.PI / 4;
-    house.add(roof);
-
-    const door = this.mesh(new THREE.BoxGeometry(0.95, 1.6, 0.1), woodDark);
-    door.position.set(0, 0.8, 1.74);
-    house.add(door);
-
-    const windowGeo = new THREE.BoxGeometry(0.8, 0.8, 0.1);
-    [-1.4, 1.4].forEach((x) => {
-      const win = this.mesh(windowGeo, glassMat);
-      win.position.set(x, 1.5, 1.74);
-      house.add(win);
-    });
-
-    const awning = this.mesh(new THREE.BoxGeometry(4.9, 0.16, 1.0), roofMat);
-    awning.position.set(0, 2.42, 1.9);
-    awning.rotation.x = -0.16;
-    house.add(awning);
-
-    const pole = this.mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.5, 8), cream);
-    pole.position.set(1.9, 3.9, 0.9);
-    house.add(pole);
-    const flag = this.mesh(
-      new THREE.PlaneGeometry(0.7, 0.42),
-      this.track(new THREE.MeshStandardMaterial({ color: 0xff7a59, roughness: 0.7, side: THREE.DoubleSide })),
-    );
-    flag.position.set(2.25, 4.3, 0.9);
-    house.add(flag);
-
-    this.plaza.add(house);
-    this.obstacles.push({ x: houseX, z: houseZ, r: 3.1 });
-
-    // 나무 · 바위
-    const treeSpots: Array<[number, number, number]> = [
-      [-11.6, -2.6, 1.25],
-      [-10.4, 8.4, 1.05],
-      [10.6, 6.6, 1.1],
-      [12.2, -1.0, 0.95],
-      [-6.4, -8.6, 1.0],
-      [7.2, -10.6, 0.9],
-      [1.8, 11.4, 1.0],
-      [-2.4, -12.0, 0.85],
-      [12.4, -8.4, 1.15],
-      [-12.6, 4.4, 0.8],
-    ];
-    treeSpots.forEach(([x, z, s]) => {
-      const tree = createTree(s);
-      tree.position.set(x, 0, z);
-      tree.rotation.y = rand() * Math.PI;
-      this.plaza.add(tree);
-      this.obstacles.push({ x, z, r: 0.55 * s });
-    });
-
-    const rockSpots: Array<[number, number, number]> = [
-      [-6.8, 6.9, 0.8],
-      [9.6, 1.6, 0.7],
-      [4.6, -7.4, 0.6],
-      [-9.4, -5.4, 0.5],
-    ];
-    rockSpots.forEach(([x, z, s]) => {
-      const rock = createRock(s);
-      rock.position.set(x, 0.02, z);
-      this.plaza.add(rock);
-    });
-
-    // 벤치
-    const benchSpots: Array<[number, number, number]> = [
-      [-4.6, 3.2, 0.5],
-      [4.4, 3.6, -0.6],
-      [-5.2, -4.2, 1.1],
-      [6.6, 2.0, -1.3],
-    ];
-    benchSpots.forEach(([x, z, rot]) => {
-      const bench = new THREE.Group();
-      bench.position.set(x, 0, z);
-      bench.rotation.y = rot;
-
-      const seat = this.mesh(new THREE.BoxGeometry(1.9, 0.12, 0.55), wood);
-      seat.position.y = 0.45;
-      bench.add(seat);
-
-      const back = this.mesh(new THREE.BoxGeometry(1.9, 0.5, 0.1), wood);
-      back.position.set(0, 0.72, -0.24);
-      bench.add(back);
-
-      const legGeo = new THREE.BoxGeometry(0.1, 0.45, 0.1);
-      [-0.75, 0.75].forEach((lx) => {
-        const leg = this.mesh(legGeo, woodDark);
-        leg.position.set(lx, 0.22, 0.16);
-        bench.add(leg);
-        const leg2 = this.mesh(legGeo, woodDark);
-        leg2.position.set(lx, 0.22, -0.16);
-        bench.add(leg2);
-      });
-
-      this.plaza.add(bench);
-      this.obstacles.push({ x, z, r: 0.85 });
-    });
-
-    // 가로등
-    const lampSpots: Array<[number, number]> = [
-      [-3.0, -6.6],
-      [3.0, -6.6],
-      [-6.2, 0.6],
-      [6.2, -0.4],
-      [-1.8, 6.4],
-      [2.4, 7.2],
-    ];
-    lampSpots.forEach(([x, z]) => {
-      const lamp = new THREE.Group();
-      lamp.position.set(x, 0, z);
-
-      const post = this.mesh(new THREE.CylinderGeometry(0.055, 0.075, 2.5, 10), stoneDeep);
-      post.position.y = 1.25;
-      lamp.add(post);
-
-      const bulb = this.mesh(new THREE.SphereGeometry(0.17, 14, 12), bulbMat, false, false);
-      bulb.position.y = 2.62;
-      lamp.add(bulb);
-
-      const cap = this.mesh(new THREE.ConeGeometry(0.24, 0.2, 12), stoneDeep);
-      cap.position.y = 2.82;
-      lamp.add(cap);
-
-      this.plaza.add(lamp);
-      this.obstacles.push({ x, z, r: 0.22 });
-    });
-
-    // 꽃밭
-    for (let i = 0; i < 44; i += 1) {
-      const angle = rand() * Math.PI * 2;
-      const radius = 6.4 + rand() * 6.4;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      if (Math.hypot(x - 7.8, z + 3.4) < 3.2) continue;
-      if (Math.abs(x) < 2.2 && z < -3) continue;
-      const flower = this.mesh(
-        new THREE.SphereGeometry(0.07 + rand() * 0.04, 8, 6),
-        flowerMats[Math.floor(rand() * flowerMats.length)],
-        false,
-        false,
-      );
-      flower.position.set(x, 0.06, z);
-      this.plaza.add(flower);
-    }
-
-    // 울타리 (낮은 생울타리 + 기둥)
-    const hedge = this.mesh(new THREE.TorusGeometry(PLAZA_RADIUS - 0.5, 0.36, 10, 84), hedgeMat, true, true);
-    hedge.rotation.x = -Math.PI / 2;
-    hedge.position.y = 0.42;
-    hedge.scale.set(1, 1, 1.5);
-    this.plaza.add(hedge);
-
-    const postGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.95, 8);
-    for (let i = 0; i < 30; i += 1) {
-      const angle = (i / 30) * Math.PI * 2;
-      const post = this.mesh(postGeo, cream);
-      post.position.set(
-        Math.cos(angle) * (PLAZA_RADIUS - 0.5),
-        0.47,
-        Math.sin(angle) * (PLAZA_RADIUS - 0.5),
-      );
-      this.plaza.add(post);
-    }
-
-    // 구름
-    for (let i = 0; i < 7; i += 1) {
-      const cloud = createCloud(1.4 + rand() * 1.4);
-      const angle = rand() * Math.PI * 2;
-      const radius = 6 + rand() * 16;
-      cloud.position.set(Math.cos(angle) * radius, 9 + rand() * 4, Math.sin(angle) * radius);
-      this.plaza.add(cloud);
-    }
-  }
-
-  private buildGate(): void {
-    const stone = this.track(new THREE.MeshStandardMaterial({ color: 0xf7f1e2, roughness: 0.8 }));
-    const stoneDeep = this.track(new THREE.MeshStandardMaterial({ color: 0xd9cbb0, roughness: 0.9 }));
-    const glowMat = this.track(
-      new THREE.MeshStandardMaterial({
-        color: 0x6fe6ff,
-        emissive: 0x35c8ff,
-        emissiveIntensity: 1.5,
-        roughness: 0.25,
-        metalness: 0.15,
-      }),
-    );
-    const innerMat = this.track(
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        map: portalTexture(),
-        transparent: true,
-        opacity: 0.88,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    );
-    const haloMat = this.track(
-      new THREE.MeshBasicMaterial({
-        color: 0x9beeff,
-        transparent: true,
-        opacity: 0.35,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-
-    this.gateGroup.position.copy(GATE);
-    this.plaza.add(this.gateGroup);
-
-    // 단상
-    const step = this.mesh(new THREE.CylinderGeometry(2.35, 2.6, 0.2, 44), stoneDeep, false, true);
-    step.position.y = -0.09;
-    this.gateGroup.add(step);
-
-    const stepTop = this.mesh(new THREE.CylinderGeometry(2.1, 2.1, 0.06, 44), stone, false, true);
-    stepTop.position.y = 0.03;
-    this.gateGroup.add(stepTop);
-
-    // 기둥
-    const pillarGeo = new THREE.BoxGeometry(0.5, 3.2, 0.5);
-    [-1.72, 1.72].forEach((x) => {
-      const pillar = this.mesh(pillarGeo, stone);
-      pillar.position.set(x, 1.7, 0);
-      this.gateGroup.add(pillar);
-
-      const base = this.mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.34, 16), stoneDeep);
-      base.position.set(x, 0.32, 0);
-      this.gateGroup.add(base);
-
-      const cap = this.mesh(new THREE.BoxGeometry(0.62, 0.16, 0.62), glowMat);
-      cap.position.set(x, 3.36, 0);
-      this.gateGroup.add(cap);
-
-      this.obstacles.push({ x: GATE.x + x, z: GATE.z, r: 0.42 });
-    });
-
-    // 상단 보
-    const beam = this.mesh(new THREE.BoxGeometry(4.4, 0.36, 0.58), stone);
-    beam.position.set(0, 3.5, 0);
-    this.gateGroup.add(beam);
-
-    // 빛나는 링
-    const ring = this.mesh(new THREE.TorusGeometry(1.32, 0.1, 16, 54), glowMat, false, false);
-    ring.position.y = 1.45;
-    this.gateGroup.add(ring);
-    this.gateRing = ring;
-
-    const ringInner = this.mesh(new THREE.TorusGeometry(1.08, 0.03, 8, 48), glowMat, false, false);
-    ringInner.position.y = 1.45;
-    this.gateGroup.add(ringInner);
-
-    // 포탈 면
-    const inner = this.mesh(new THREE.CircleGeometry(1.26, 54), innerMat, false, false);
-    inner.position.set(0, 1.45, 0.01);
-    this.gateGroup.add(inner);
-    this.gateInner = inner;
-
-    const halo = this.mesh(new THREE.CircleGeometry(1.75, 54), haloMat, false, false);
-    halo.position.set(0, 0.05, 0);
-    halo.rotation.x = -Math.PI / 2;
-    this.gateGroup.add(halo);
-    this.gateHalo = halo;
-
-    const light = new THREE.PointLight(0x9fe8ff, 6, 11, 2);
-    light.position.set(0, 1.8, 0.8);
-    this.gateGroup.add(light);
-    this.gateGlow = light;
-
-    // 표지판
-    const sign = createLabelSprite('플레이룸 ⛳', '#8ff3ff', {
-      scale: [2.6, 0.78],
-      canvasWidth: 512,
-      canvasHeight: 154,
-      fontSize: 66,
-      bg: 'rgba(12, 38, 48, 0.9)',
-    });
-    if (sign) {
-      sign.position.set(0, 4.45, 0);
-      this.gateGroup.add(sign);
-    }
+    this.plazaHandle = buildPlaza(this.plaza);
+    this.gateGroup = this.plazaHandle.gate;
+    this.obstacles.push(...this.plazaHandle.obstacles);
+    // 정적인 소품은 합쳐 드로우콜을 줄인다 (게이트·물은 애니메이션이라 그대로 둔다)
+    this.mergedGeometries.push(...mergeStaticMeshes(this.plaza, new Set([this.gateGroup])));
   }
 
   private buildGuests(): void {
@@ -750,7 +307,7 @@ export class Lobby {
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       if (Math.hypot(x - 7.8, z + 3.4) < 3.4) continue;
-      if (Math.hypot(x - -8.2, z - 3.8) < 3.9) continue;
+      if (Math.hypot(x + 9.7, z - 2.4) < 5.5) continue;
       if (Math.abs(x) < 2.4 && z < -5) continue;
       if (this.obstacles.some((obstacle) => Math.hypot(x - obstacle.x, z - obstacle.z) < obstacle.r + 0.85)) {
         continue;
@@ -888,13 +445,6 @@ export class Lobby {
   // ---------------------------------------------------------------- 업데이트
 
   update(dt: number): void {
-    if (this.pondWater) {
-      const material = this.pondWater.material as THREE.MeshStandardMaterial;
-      if (material.map) {
-        material.map.offset.x = (material.map.offset.x + dt * 0.012) % 1;
-        material.map.offset.y = (material.map.offset.y + dt * 0.02) % 1;
-      }
-    }
     const step = Math.min(dt, 0.05);
     this.time += step;
 
@@ -1056,27 +606,7 @@ export class Lobby {
   }
 
   private updateGate(dt: number): void {
-    const t = this.time;
-    if (this.gateRing) {
-      const material = this.gateRing.material as THREE.MeshStandardMaterial;
-      material.emissiveIntensity = 1.25 + Math.sin(t * 2.2) * 0.45;
-      this.gateRing.scale.setScalar(1 + Math.sin(t * 2.2) * 0.012);
-    }
-    if (this.gateInner) {
-      const material = this.gateInner.material as THREE.MeshBasicMaterial;
-      material.opacity = 0.78 + Math.sin(t * 1.7) * 0.12;
-      this.gateInner.rotation.z += dt * 0.35;
-      const scale = 1 + Math.sin(t * 2.6) * 0.03;
-      this.gateInner.scale.set(scale, scale, 1);
-    }
-    if (this.gateHalo) {
-      const material = this.gateHalo.material as THREE.MeshBasicMaterial;
-      material.opacity = 0.24 + Math.sin(t * 1.4) * 0.08;
-      this.gateHalo.rotation.z -= dt * 0.18;
-    }
-    if (this.gateGlow) {
-      this.gateGlow.intensity = 5 + Math.sin(t * 2.1) * 1.4;
-    }
+    this.plazaHandle?.update(dt);
   }
 
   private spawnBubble(position: THREE.Vector3, emoji: string): void {
@@ -1359,50 +889,12 @@ export class Lobby {
     this.bubbles.length = 0;
     this.disposables.forEach((item) => item.dispose());
     this.disposables.length = 0;
+    this.mergedGeometries.forEach((geometry) => geometry.dispose());
+    this.mergedGeometries.length = 0;
     this.scene.remove(this.root);
   }
 }
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
-}
-
-/** 플레이룸 게이트 안쪽의 빛나는 소용돌이 (캔버스 그라데이션) */
-function portalTexture(): THREE.Texture | null {
-  if (typeof document === 'undefined') return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  const gradient = ctx.createRadialGradient(128, 128, 6, 128, 128, 126);
-  gradient.addColorStop(0, 'rgba(236, 255, 255, 0.98)');
-  gradient.addColorStop(0.35, 'rgba(126, 238, 255, 0.9)');
-  gradient.addColorStop(0.72, 'rgba(62, 200, 255, 0.55)');
-  gradient.addColorStop(1, 'rgba(62, 200, 255, 0.06)');
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(128, 128, 126, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 소용돌이 선
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
-  ctx.lineWidth = 3;
-  for (let i = 0; i < 3; i += 1) {
-    ctx.beginPath();
-    const offset = (i / 3) * Math.PI * 2;
-    for (let a = 0; a < Math.PI * 1.5; a += 0.08) {
-      const r = 12 + a * 16;
-      const x = 128 + Math.cos(a + offset) * r;
-      const y = 128 + Math.sin(a + offset) * r;
-      if (a === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
 }

@@ -12,7 +12,7 @@ export function applyRendererLook(renderer: THREE.WebGLRenderer): void {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 1.06;
 }
 
 export interface SkyOptions {

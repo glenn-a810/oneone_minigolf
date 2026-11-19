@@ -6,7 +6,7 @@ import { CameraRig } from './camera';
 import { Effects } from './effects';
 import type { AudioEngine } from './audio';
 import { createBall } from './scenery';
-import { Golfer } from '../lobby/avatar';
+import { Golfer, type ClubLook } from '../lobby/avatar';
 import { BALL_RADIUS, MIN_POWER_RATIO, STROKE_LIMIT_EXTRA } from './constants';
 import { GolfBall, previewShot, type TrajectoryPreview } from './ball';
 import {
@@ -394,7 +394,7 @@ export class Game {
       this.golfer.setVisible(true);
       return;
     }
-    const golfer = new Golfer({ color: this.identity.color, club: true });
+    const golfer = new Golfer({ color: this.identity.color, club: true, clubType: clubLookOf(this.clubId) });
     this.golfer = golfer;
     this.scene.add(golfer.group);
     this.snapGolfer();
@@ -1221,6 +1221,7 @@ export class Game {
   }
 
   private emitClub(): void {
+    this.golfer?.setClubLook(clubLookOf(this.clubId));
     this.events.onClub?.(
       this.clubId,
       this.recommended,
@@ -1553,4 +1554,11 @@ export function verdictLabel(strokes: number, par: number): string {
 
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+/** 클럽 id → 골퍼가 들고 있는 채의 모양 */
+function clubLookOf(id: ClubId): ClubLook {
+  if (id === '1W' || id === '3W') return 'driver';
+  if (id === 'PT') return 'putter';
+  return 'iron';
 }
