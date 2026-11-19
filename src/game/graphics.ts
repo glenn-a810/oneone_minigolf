@@ -72,6 +72,7 @@ export function setLook(look: GraphicLook): void {
   current = look;
   storeLook(look);
   syncLook();
+  applyLookLights();
   applyRendererTone();
   listeners.forEach((listener) => listener(look));
 }
@@ -86,6 +87,30 @@ export function toggleLook(): GraphicLook {
 export function registerLookScene(scene: THREE.Scene): void {
   scenes.add(scene);
   syncLook(scene);
+  applyLookLights();
+}
+
+/**
+ * 룩에 맞춰 조명을 다시 배분한다.
+ * 카툰 모드에서는 하늘/필 조명을 줄여 셀 단계와 그림자가 또렷해지게 하고,
+ * 폴리 모드로 돌아오면 처음 세팅값으로 정확히 되돌린다.
+ */
+function applyLookLights(): void {
+  scenes.forEach((scene) => {
+    scene.traverse((object) => {
+      const light = object as THREE.Light;
+      if (!light.isLight) return;
+      const data = light.userData as { baseIntensity?: number };
+      if (data.baseIntensity === undefined) data.baseIntensity = light.intensity;
+      const base = data.baseIntensity;
+      let scale = 1;
+      if (current === 'toon') {
+        if ((light as THREE.HemisphereLight).isHemisphereLight) scale = 0.58;
+        else if ((light as THREE.DirectionalLight).isDirectionalLight) scale = light.castShadow ? 1.05 : 0.72;
+      }
+      light.intensity = base * scale;
+    });
+  });
 }
 
 // ---------------------------------------------------------------- 램프 텍스처
@@ -95,7 +120,7 @@ let rampCache: THREE.DataTexture | null = null;
 /** 2~3단계 셀 음영용 램프 — 단은 또렷하되 경계는 살짝 부드럽게 */
 function toonRamp(): THREE.DataTexture {
   if (rampCache) return rampCache;
-  const steps = [0.5, 0.5, 0.7, 0.7, 0.86, 0.86, 1.0, 1.0];
+  const steps = [0.4, 0.4, 0.66, 0.66, 0.86, 0.86, 1.0, 1.0];
   const data = new Uint8Array(steps.length * 4);
   steps.forEach((value, index) => {
     const byte = Math.round(THREE.MathUtils.clamp(value, 0, 1) * 255);
@@ -193,8 +218,8 @@ function buildToonMaterial(base: THREE.MeshStandardMaterial): THREE.MeshToonMate
   const isGround = outline.visible === false;
   const metal = base.metalness ?? 0;
   const rimColor = new THREE.Color(metal > 0.45 ? 0xf4f9ff : 0xa9d8ff);
-  const rimStrength = isGround ? 0.16 : metal > 0.45 ? 0.8 : 0.5;
-  const rimPower = metal > 0.45 ? 1.7 : 2.6;
+  const rimStrength = isGround ? 0.1 : metal > 0.45 ? 0.55 : 0.3;
+  const rimPower = metal > 0.45 ? 2.2 : 3.4;
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uRimColor = { value: rimColor };
@@ -429,7 +454,7 @@ export interface LookRenderer {
 
 function applyRendererTone(): void {
   if (!renderer) return;
-  renderer.toneMappingExposure = current === 'toon' ? 1.04 : 1.0;
+  renderer.toneMappingExposure = current === 'toon' ? 0.98 : 1.0;
 }
 
 /**
