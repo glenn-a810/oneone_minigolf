@@ -200,8 +200,25 @@ function realMaterialFor(base: THREE.Material): THREE.Material {
   const color = std.color ?? new THREE.Color(0xffffff);
   const metalLike = (std.metalness ?? 0) >= 0.45;
 
+  const plain = base.userData?.oneonePlainReal === true;
   const material = isWaterMaterial(base)
     ? createWaterMaterial({ color: 0x2a6f80, opacity: Math.max(0.4, std.opacity ?? 1) })
+    : plain
+    ? (() => {
+        // 텍스처 없이 색만 — 원경 언덕처럼 UV 를 주면 오히려 반짝이는 면
+        const matte = new THREE.MeshStandardMaterial({
+          color: color,
+          roughness: std.roughness ?? 0.95,
+          metalness: 0,
+          flatShading: false,
+          vertexColors: std.vertexColors === true,
+          envMapIntensity: 0.35,
+        });
+        matte.userData[REAL_FLAG] = true;
+        matte.userData.oneoneSurface = kind;
+        matte.name = 'real-hill';
+        return matte;
+      })()
     : createSurfaceMaterial(metalLike ? 'metal' : kind, {
         color: color,
         vertexColors: std.vertexColors === true,

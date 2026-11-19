@@ -81,10 +81,12 @@ export function buildSky(scene: THREE.Scene, options: SkyOptions = {}): SkyHandl
 
   // 원경 언덕/숲 실루엣 — 폴리는 7각 봉우리, 실사는 같은 자리를 둥근 능선으로 바꾼다
   if (options.hills !== false) {
+    // 원경 언덕은 텍스처 없이 매트한 초록면으로 (먼 거리에서 텍스처가 반짝이지 않게)
     const hillMat = markGround(
       new THREE.MeshStandardMaterial({ color: 0x4f8f52, roughness: 1, flatShading: true }),
       'turf',
     );
+    hillMat.userData.oneonePlainReal = true;
     for (let i = 0; i < 26; i += 1) {
       const angle = (i / 26) * Math.PI * 2 + Math.random() * 0.25;
       const distance = 88 + Math.random() * 34;
