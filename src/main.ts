@@ -11,6 +11,7 @@ import { bindHoldControl } from './game/swing-input';
 import { Lobby, type LobbyPeer } from './lobby/lobby';
 import { SURFACE_LABEL, CLUBS, getClub, type ClubId } from './game/clubs';
 import { applyRendererLook, buildSky } from './game/environment';
+import { createLookRenderer, getLook, onLookChange, registerLookScene, setLook, syncLook, toggleLook } from './game/graphics';
 
 function $(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -40,6 +41,9 @@ try {
 
 applyRendererLook(renderer);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+// 그래픽 룩(폴리 ↔ 카툰)을 바꿔 그리는 렌더러
+const lookRenderer = createLookRenderer(renderer);
 
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 320);
 
@@ -107,6 +111,10 @@ lobbyScene.add(lobbySun.target);
 const lobbyFill = new THREE.DirectionalLight(0xd6ecff, 0.42);
 lobbyFill.position.set(-15, 10, -17);
 lobbyScene.add(lobbyFill);
+
+// 두 씬 모두 룩 토글 대상으로 등록 (저장된 선택이 카툰이면 여기서 바로 적용된다)
+registerLookScene(gameScene);
+registerLookScene(lobbyScene);
 
 // ---------------------------------------------------------------- 게임/오디오/네트워크
 
@@ -387,6 +395,8 @@ const game = new Game({
       $('stroke-count').textContent = '0';
       $('hole-dist').textContent = '0';
       focusSun(spec);
+      // 새 홀은 새 매터리얼·지오메트리로 만들어지므로 현재 룩을 바로 입힌다
+      syncLook();
       renderPeers(game.getPeers());
     },
     onStroke: (strokes: number) => {
@@ -534,6 +544,7 @@ function startLobby(): void {
   ($('lobby-me-dot') as HTMLElement).style.background = selectedColor;
 
   lobby.enter(identity);
+  syncLook();
   renderLobbyPeople([], []);
   showBanner('클럽하우스 입장', `${name}님, 이모지로 인사하며 광장을 둘러보세요`, 'plain');
 }
@@ -557,6 +568,7 @@ function enterPlayroom(): void {
     ($('me-dot') as HTMLElement).style.background = me.color;
     mode = 'game';
     game.join(me);
+    syncLook();
     lobby.setMode('idle');
     renderGauge({
       phase: 'idle',
@@ -596,6 +608,42 @@ gateButton.addEventListener('click', () => {
   audio.unlock();
   audio.ui();
   lobby.requestPlayroom();
+});
+
+// ---------------------------------------------------------------- 그래픽 룩 (폴리 ↔ 카툰)
+
+const lookButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.look-switch button[data-look]'));
+
+function syncLookUi(): void {
+  const look = getLook();
+  lookButtons.forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.look === look));
+  });
+}
+
+lookButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const next = button.dataset.look === 'toon' ? 'toon' : 'synty';
+    if (next === getLook()) return;
+    audio.unlock();
+    audio.ui();
+    setLook(next);
+    syncLookUi();
+    showToast(next === 'toon' ? '🎨 카툰 렌더링 · 셀 셰이딩 + 외곽선' : '🧊 Synty 폴리 스타일');
+  });
+});
+
+syncLookUi();
+onLookChange(syncLookUi);
+// 키보드 L 로도 한 번씩 오간다 (입력 중이 아닐 때만)
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'l' && event.key !== 'L') return;
+  const target = event.target as HTMLElement | null;
+  if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+  if (mode === 'landing' || transitioning) return;
+  toggleLook();
+  syncLookUi();
+  showToast(getLook() === 'toon' ? '🎨 카툰 렌더링' : '🧊 Synty 폴리 스타일');
 });
 
 // ---------------------------------------------------------------- HUD 조작
@@ -914,17 +962,22 @@ window.addEventListener('orientationchange', () => window.setTimeout(resize, 120
 resize();
 
 let last = performance.now();
+let lookSyncTick = 0;
 
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
+  // 새로 만들어진 오브젝트(홀 교체·입장한 골퍼)도 현재 룩을 따라오게 주기적으로 맞춘다
+  lookSyncTick += 1;
+  if (lookSyncTick % 20 === 0) syncLook();
+
   if (mode === 'game') {
     game.update(dt);
-    renderer.render(gameScene, camera);
+    lookRenderer.render(gameScene, camera);
   } else {
     lobby.update(dt);
-    renderer.render(lobbyScene, camera);
+    lookRenderer.render(lobbyScene, camera);
   }
 
   requestAnimationFrame(frame);

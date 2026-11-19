@@ -12,6 +12,7 @@
     "verify:physics": "esbuild scripts/physics-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/physics-check.cjs && node .tmp/physics-check.cjs",
     "verify:sync": "esbuild scripts/sync-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/sync-check.cjs && node .tmp/sync-check.cjs",
     "verify:lobby": "esbuild scripts/lobby-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/lobby-check.cjs && node .tmp/lobby-check.cjs",
+    "verify:look": "esbuild scripts/look-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/look-check.cjs && node .tmp/look-check.cjs",
     "verify:swing": "esbuild scripts/swing-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/swing-check.cjs && node .tmp/swing-check.cjs",
     "verify:relay": "esbuild worker/test/relay-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/relay-check.cjs && node .tmp/relay-check.cjs",
     "verify:net": "esbuild worker/test/net-check.ts --bundle --format=cjs --platform=node --outfile=.tmp/net-check.cjs && node .tmp/net-check.cjs"

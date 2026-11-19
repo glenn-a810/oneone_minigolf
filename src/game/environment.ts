@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createCloudSprite } from './scenery';
 import { skyTexture, softDotTexture } from './textures';
+import { markGround } from './graphics';
 
 /**
  * 하늘 돔 + 구름 + 태양 글로우 + 원경 언덕.
@@ -80,7 +81,7 @@ export function buildSky(scene: THREE.Scene, options: SkyOptions = {}): SkyHandl
 
   // 원경 언덕/숲 실루엣
   if (options.hills !== false) {
-    const hillMat = new THREE.MeshStandardMaterial({ color: 0x4f8f52, roughness: 1, flatShading: true });
+    const hillMat = markGround(new THREE.MeshStandardMaterial({ color: 0x4f8f52, roughness: 1, flatShading: true }));
     for (let i = 0; i < 26; i += 1) {
       const angle = (i / 26) * Math.PI * 2 + Math.random() * 0.25;
       const distance = 88 + Math.random() * 34;

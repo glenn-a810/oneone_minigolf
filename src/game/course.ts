@@ -22,6 +22,7 @@ import {
 } from './scenery';
 import { PALETTE, mergeStaticMeshes, paintFaces, seeded } from './props';
 import { FALLBACK, flagTexture, waterTexture } from './textures';
+import { markGround, releaseLookGeometry } from './graphics';
 
 /**
  * 한 홀의 3D 코스.
@@ -413,9 +414,9 @@ export class Course {
     return material;
   }
 
-  /** 정점 색상 + 플랫 셰이딩 지면 매터리얼 */
+  /** 정점 색상 + 플랫 셰이딩 지면 매터리얼 (카툰 모드에서도 외곽선은 그리지 않는다) */
   private groundMaterial(roughness = 0.94, flatShading = true): THREE.MeshStandardMaterial {
-    return this.material({ vertexColors: true, roughness, flatShading });
+    return markGround(this.material({ vertexColors: true, roughness, flatShading }));
   }
 
   private addGround(
@@ -775,6 +776,8 @@ export class Course {
     });
     const clothGeo = this.track(new THREE.PlaneGeometry(0.64, 0.4, 10, 4));
     clothGeo.translate(0.32, 0, 0);
+    // 매 프레임 정점을 흔드는 천은 노멀 사본을 만들지 않는다
+    clothGeo.userData.noSmooth = true;
     const cloth = new THREE.Mesh(clothGeo, clothMat);
     cloth.position.set(0, 1.44, 0);
     cloth.castShadow = true;
@@ -1042,6 +1045,8 @@ export class Course {
 
   dispose(): void {
     this.scene.remove(this.group);
+    // 카툰 모드용 매끈 노멀 사본도 함께 정리한다
+    releaseLookGeometry(this.group);
     this.geometries.forEach((geometry) => geometry.dispose());
     this.geometries.length = 0;
     this.materials.forEach((material) => material.dispose());
