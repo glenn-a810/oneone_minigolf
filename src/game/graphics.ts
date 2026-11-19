@@ -306,8 +306,7 @@ function applyLook(root: THREE.Object3D): void {
         return;
       }
       if (mesh.userData.realRound === true && !mesh.userData.syntyRoundGeometry) {
-        const rounded = roundedGeometry(mesh.geometry, true);
-        smoothNormals(rounded, CREASE_REAL);
+        const rounded = smoothNormals(roundedGeometry(mesh.geometry, true), CREASE_REAL);
         mesh.userData.syntyRoundGeometry = mesh.geometry;
         mesh.geometry = rounded;
       }
