@@ -9,6 +9,7 @@ import {
   type SurfaceKind,
 } from './pbr';
 import { realVariantFor } from './props';
+import { ensureBoxUv } from './geo';
 
 /**
  * 그래픽 룩(스타일) 전환 — 두 가지를 실시간으로 비교한다.
@@ -228,6 +229,8 @@ function swapMeshToReal(mesh: THREE.Mesh): void {
 
   const real = realMaterialFor(material);
   if (real === material) return;
+  // PBR 텍스처가 1m 격자로 반복되도록 월드 미터 박스 UV 를 한 번 만들어 둔다
+  ensureBoxUv(mesh.geometry as THREE.BufferGeometry);
   if (mesh.userData.syntyMaterial === undefined) mesh.userData.syntyMaterial = material;
   mesh.material = real;
 }

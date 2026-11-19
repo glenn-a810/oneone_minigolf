@@ -130,6 +130,10 @@ check('실사 변형만 보인다', Boolean(pineReal) && pineReal.visible === tr
 
 const realPineTris = pineReal ? meshesUnder(pineReal).reduce((sum, mesh) => sum + triangles(mesh), 0) : 0;
 check(
+  '실사 변형 메시에도 텍스처 UV 가 있다',
+  (pineReal ? meshesUnder(pineReal) : []).every((mesh) => Boolean(mesh.geometry.getAttribute('uv'))),
+);
+check(
   '실사 메시는 분할이 훨씬 많다 (각진 폴리 티 벗기기)',
   realPineTris > polyPineTris * 2.5,
   `폴리 ${polyPineTris} → 실사 ${realPineTris} 삼각형`,
@@ -160,6 +164,7 @@ const groundReal = ground.material as THREE.MeshStandardMaterial;
 check('지면이 잔디 PBR 재질로 바뀐다', groundReal.userData.oneoneReal === true && groundReal.userData.oneoneSurface === 'fairway');
 check('지면 재질에 텍스처 3종이 붙는다', Boolean(groundReal.map && groundReal.normalMap && groundReal.roughnessMap));
 check('지면은 정점 색(스트라이프·구역 톤)을 유지한다', groundReal.vertexColors === true);
+check('실사 지면에 텍스처 UV 가 생성된다', Boolean(ground.geometry.getAttribute('uv')));
 
 const waterReal = water.material as THREE.MeshPhysicalMaterial;
 check('물은 물리 매터리얼로 바뀐다', waterReal.isMeshPhysicalMaterial === true, waterReal.type);

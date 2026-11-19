@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { CREASE_REAL, roundedGeometry, smoothNormals } from './geo';
+import { CREASE_REAL, ensureBoxUv, roundedGeometry, smoothNormals } from './geo';
 import { createSurfaceMaterial, type SurfaceKind } from './pbr';
 
 /**
@@ -319,6 +319,7 @@ function buildEntries(parts: PropPart[], real: boolean): CachedEntry[] {
     slot.geometries.forEach((geo) => geo.dispose());
     if (!merged) return;
     merged.computeBoundingSphere();
+    if (real) ensureBoxUv(merged);
     entries.push({
       geometry: merged,
       material: real ? realMaterial(slot.kind, slot.bucket) : polyMaterial(slot.kind, slot.bucket),
