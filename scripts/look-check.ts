@@ -8,6 +8,8 @@
  */
 import * as THREE from 'three';
 import { createPine, createRockCluster } from '../src/game/scenery';
+import { Course } from '../src/game/course';
+import { HOLES } from '../src/game/courses';
 import {
   getLook,
   markGround,
@@ -160,6 +162,41 @@ check(
 );
 
 setLook('toon');
+setLook('synty');
+
+// ---------------------------------------------------------------- 홀 교체
+
+// 카툰 상태에서 홀을 넘겨도 새 코스가 자동으로 같은 룩을 입고, 지난 홀 사본은 정리된다
+setLook('toon');
+const courseScene = new THREE.Scene();
+registerLookScene(courseScene);
+const hole1 = new Course(courseScene, HOLES[0]);
+syncLook(courseScene);
+const hole1Meshes = (): THREE.Mesh[] => {
+  const list: THREE.Mesh[] = [];
+  hole1.group.traverse((object) => {
+    if ((object as THREE.Mesh).isMesh) list.push(object as THREE.Mesh);
+  });
+  return list;
+};
+const hole1AllToon = hole1Meshes().every(
+  (mesh) => !(mesh.material as THREE.Material).userData.outlineParameters?.visible ||
+    (mesh.material as THREE.Material).userData.oneoneToon === true,
+);
+check('카툰 상태에서 새 홀도 셀 셰이딩으로 채워진다', hole1AllToon, `메쉬 ${hole1Meshes().length}개`);
+hole1.dispose();
+const hole2 = new Course(courseScene, HOLES[1]);
+syncLook(courseScene);
+let hole2Toon = 0;
+let hole2Total = 0;
+hole2.group.traverse((object) => {
+  const mesh = object as THREE.Mesh;
+  if (!mesh.isMesh) return;
+  hole2Total += 1;
+  if ((mesh.material as THREE.Material).userData.oneoneToon === true) hole2Toon += 1;
+});
+check('홀을 넘겨도 카툰 룩이 유지된다', hole2Toon > 0, `카툰 메쉬 ${hole2Toon}/${hole2Total}`);
+hole2.dispose();
 setLook('synty');
 
 console.log(`\n그래픽 룩 검증 ${failures === 0 ? '통과 ✅' : `실패 ${failures}건 ❌`}`);
