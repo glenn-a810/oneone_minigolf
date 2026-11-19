@@ -146,7 +146,7 @@ function applyEnvironmentAll(): void {
 
 function applyRendererTone(): void {
   if (!renderer) return;
-  renderer.toneMappingExposure = current === 'real' ? 1.05 : 1.0;
+  renderer.toneMappingExposure = 1.0;
 }
 
 /** 실사 룩의 물결 시간 — 프레임마다 호출해도 안전하다 */

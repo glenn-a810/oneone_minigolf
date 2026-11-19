@@ -52,7 +52,7 @@ export const SURFACES: Record<SurfaceKind, SurfaceDef> = {
   stone: { tile: 2.2, size: 256, normalStrength: 0.7, roughness: 0.76, metalness: 0, envIntensity: 0.6 },
   wood: { tile: 1.2, size: 256, normalStrength: 0.28, roughness: 0.58, metalness: 0, envIntensity: 0.6 },
   bark: { tile: 1.0, size: 256, normalStrength: 1.35, roughness: 0.94, metalness: 0, envIntensity: 0.45 },
-  leaf: { tile: 1.1, size: 256, normalStrength: 1.0, roughness: 0.72, metalness: 0, envIntensity: 0.55 },
+  leaf: { tile: 0.85, size: 256, normalStrength: 1.35, roughness: 0.74, metalness: 0, envIntensity: 0.5 },
   water: { tile: 3.5, size: 512, normalStrength: 1.0, roughness: 0.07, metalness: 0.02, envIntensity: 1.25 },
   metal: { tile: 0.8, size: 256, normalStrength: 0.35, roughness: 0.3, metalness: 1, envIntensity: 1.5 },
   fabric: { tile: 0.6, size: 256, normalStrength: 0.5, roughness: 0.9, metalness: 0, envIntensity: 0.45 },
@@ -272,16 +272,18 @@ function sampleSurface(kind: SurfaceKind, u: number, v: number): SurfaceSample {
       };
     }
     case 'leaf': {
-      const cluster = tfbm(u, v, 9, 9, 1117, 3);
-      const leaves = tnoise(u, v, 64, 64, 1123);
-      const vein = tnoise(u, v, 120, 36, 1129);
-      const tone = 0.6 + cluster * 0.34 + (leaves - 0.5) * 0.3 + vein * 0.08;
+      const cluster = tfbm(u, v, 10, 10, 1117, 3);
+      const leaves = tnoise(u, v, 70, 70, 1123);
+      const vein = tnoise(u, v, 150, 44, 1129);
+      const young = smoothstep(0.6, 0.85, tfbm(u, v, 6, 6, 1131, 2));
+      const tone = 0.5 + cluster * 0.34 + (leaves - 0.5) * 0.38 + vein * 0.14;
+      const color = mixRgb([0.86 * tone, 1.0 * tone, 0.64 * tone], [1.0 * tone, 1.0 * tone, 0.66 * tone], young * 0.5);
       return {
-        r: clamp01(0.9 * tone),
-        g: clamp01(1.0 * tone),
-        b: clamp01(0.7 * tone),
-        h: cluster * 0.5 + leaves * 0.4 + vein * 0.1,
-        rough: 0.74 - leaves * 0.06,
+        r: clamp01(color[0]),
+        g: clamp01(color[1]),
+        b: clamp01(color[2]),
+        h: cluster * 0.45 + leaves * 0.45 + vein * 0.1,
+        rough: 0.76 - leaves * 0.08,
       };
     }
     case 'water': {
