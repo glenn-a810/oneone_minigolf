@@ -232,7 +232,13 @@ function waitImpactZone(): void {
 }
 
 /** 실제 입력 순서 그대로: 누르고 있기 → 떼기 → 타이밍 탭 */
-function swingByInput(power: number): { power: number; grade?: string; fired: boolean } {
+function swingByInput(power: number): {
+  power: number;
+  grade?: string;
+  fired: boolean;
+  impactSeconds: number;
+  swung: boolean;
+} {
   game.restart();
   game.setClub('1W');
   const start = game.debugState();
@@ -246,11 +252,21 @@ function swingByInput(power: number): { power: number; grade?: string; fired: bo
   const confirmed = game.debugGauge().power;
   waitImpactZone();
   game.swingTap(); // 정확도 타이밍 탭
+  const motion = game.debugState().state;
+
+  // 탭하면 골퍼 스윙 모션이 먼저 시작되고, 임팩트 프레임(약 0.15초)에 공이 출발한다
+  let frames = 0;
+  while (game.debugState().state === 'swing' && frames < 120) {
+    game.update(DT);
+    frames += 1;
+  }
 
   return {
     power: confirmed,
     grade: lastPlan?.grade,
-    fired: started && game.debugState().state === 'flight',
+    fired: started && motion === 'swing' && game.debugState().state === 'flight',
+    impactSeconds: frames / 60,
+    swung: game.debugClubSwing(),
   };
 }
 
@@ -307,6 +323,12 @@ console.log('\n— 실제 게임: 입력 순서·엣지케이스 —');
   check('홀드 & 릴리즈 & 탭으로 실제 샷이 나간다 (+1타)', run.fired && state.strokes === 1, `${state.state} / ${state.strokes}타`);
   check('뗀 지점의 파워가 그대로 확정된다', Math.abs(run.power - 0.6) < 0.06, `${run.power.toFixed(2)}`);
   check('임팩트 존 탭은 perfect 로 판정', run.grade === 'perfect', run.grade ?? 'none');
+  check(
+    '탭 → 스윙 모션 → 임팩트(0.12~0.18초)에 공이 출발한다',
+    run.impactSeconds >= 0.11 && run.impactSeconds <= 0.2,
+    `${run.impactSeconds.toFixed(2)}초`,
+  );
+  check('탭한 순간 골퍼가 스윙 모션을 시작한다', run.swung, run.swung ? '스윙 중' : '모션 없음');
 }
 
 // ---------------------------------------------------------------- 궤적 비교

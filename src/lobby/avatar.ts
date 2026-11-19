@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { PALETTE, blob, buildProp, column, lump, plank, type PropPart } from '../game/props';
+import {
+  PUTT_IMPACT_SECONDS,
+  PUTT_MOTION_SECONDS,
+  SWING_IMPACT_SECONDS,
+  SWING_MOTION_SECONDS,
+} from '../game/constants';
 
 /** 대기실 캐릭터(골퍼)와 이름표·이모지 말풍선 스프라이트. */
 
@@ -11,6 +17,55 @@ const TROUSER_DARK = 0xa08a60;
 
 /** 클럽 종류 — 홀드한 채의 헤드 모양이 달라진다 */
 export type ClubLook = 'driver' | 'iron' | 'putter';
+
+/** 스윙 모션 종류 — 풀스윙(공을 띄워 보낸다) / 퍼팅(그린을 굴린다) */
+export type SwingStyle = 'full' | 'putt';
+
+/** 골퍼 자세 (팔·어깨·상체 각도) */
+interface Pose {
+  /** 오른팔 x 회전 (음수 = 앞, 양수 = 뒤로 감아올림) */
+  armR: number;
+  armL: number;
+  /** 손목(채 피벗) 각도 — 백스윙에서 채를 세워 올린다 */
+  wrist: number;
+  /** 몸통 비틀림 */
+  torso: number;
+  /** 좌우 기울기 */
+  lean: number;
+  /** 엉덩이/무릎 높이 */
+  dip: number;
+}
+
+interface SwingState {
+  t: number;
+  duration: number;
+  impact: number;
+  style: SwingStyle;
+  from: Pose;
+}
+
+const ADDRESS_FULL: Pose = { armR: -0.46, armL: -0.32, wrist: 0, torso: 0, lean: 0, dip: 0 };
+const COCKED_FULL: Pose = { armR: 2.55, armL: 2.1, wrist: -0.15, torso: -0.5, lean: 0.08, dip: -0.04 };
+const IMPACT_FULL: Pose = { armR: -0.5, armL: -0.4, wrist: 0.12, torso: 0.16, lean: -0.03, dip: -0.06 };
+const FOLLOW_FULL: Pose = { armR: -1.9, armL: -1.6, wrist: 0.5, torso: 0.45, lean: -0.05, dip: -0.04 };
+
+const ADDRESS_PUTT: Pose = { armR: -0.56, armL: -0.44, wrist: 0, torso: 0, lean: 0, dip: -0.05 };
+const COCKED_PUTT: Pose = { armR: 0.5, armL: 0.4, wrist: -0.16, torso: -0.07, lean: 0, dip: -0.06 };
+const IMPACT_PUTT: Pose = { armR: -0.62, armL: -0.5, wrist: 0.08, torso: 0.04, lean: 0, dip: -0.06 };
+const FOLLOW_PUTT: Pose = { armR: -0.98, armL: -0.82, wrist: 0.18, torso: 0.06, lean: 0, dip: -0.05 };
+
+function mixPose(a: Pose, b: Pose, k: number): Pose {
+  const t = Math.max(0, Math.min(1, k));
+  const ease = t * t * (3 - 2 * t);
+  return {
+    armR: a.armR + (b.armR - a.armR) * ease,
+    armL: a.armL + (b.armL - a.armL) * ease,
+    wrist: a.wrist + (b.wrist - a.wrist) * ease,
+    torso: a.torso + (b.torso - a.torso) * ease,
+    lean: a.lean + (b.lean - a.lean) * ease,
+    dip: a.dip + (b.dip - a.dip) * ease,
+  };
+}
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -168,6 +223,8 @@ export class Golfer {
   private readonly footL: THREE.Group;
   private readonly footR: THREE.Group;
   private readonly clubHeads: Record<ClubLook, THREE.Group>;
+  /** 손목 피벗 — 이 그룹을 돌리면 손목으로 채가 세워진다 */
+  private clubPivot: THREE.Group | null = null;
   private readonly ring: THREE.Mesh | null;
   private readonly holdsClub: boolean;
   private label: THREE.Sprite | null = null;
@@ -175,8 +232,13 @@ export class Golfer {
   private phase = Math.random() * Math.PI * 2;
   private clock = Math.random() * 10;
   private addressing = false;
-  private swingTime = -1;
-  private swingDuration = 0.92;
+  /** 차지 중 백스윙 깊이 (0 = 어드레스, 1 = 풀 백스윙) */
+  private charge = 0;
+  private chargeSmooth = 0;
+  /** 진행 중인 스윙 모션 */
+  private swing: SwingState | null = null;
+  /** 검증용 자세 고정 */
+  private poseOverride: Pose | null = null;
 
   constructor(options: GolferOptions) {
     const base = new THREE.Color(options.color);
@@ -224,7 +286,13 @@ export class Golfer {
         head.visible = look === (options.clubType ?? 'iron');
         clubGroup.add(head);
       });
-      this.armR.add(clubGroup);
+      // 손(팔 끝) 위치에 피벗을 두고, 그 아래에 채를 매단다 (피벗을 돌리면 손목 스냅)
+      const pivot = new THREE.Group();
+      pivot.position.set(0, -0.6, 0.01);
+      clubGroup.position.set(0, 0.6, -0.01);
+      pivot.add(clubGroup);
+      this.armR.add(pivot);
+      this.clubPivot = pivot;
       this.armR.rotation.x = -0.3;
     } else {
       this.holdsClub = false;
@@ -293,79 +361,156 @@ export class Golfer {
     this.addressing = on;
   }
 
-  /** 백스윙 → 다운스윙 → 팔로우스루 스윙 모션 재생 */
-  playSwing(duration = 0.92): void {
-    this.swingDuration = Math.max(0.35, duration);
-    this.swingTime = 0;
+  /**
+   * 차지 중 백스윙 깊이 (0 = 어드레스, 1 = 풀 백스윙).
+   * 스윙 버튼을 꾹 누르는 동안 파워에 비례해 감아올리는 자세를 만든다.
+   * 손을 떼도 임팩트 탭까지는 이 자세를 유지한다.
+   */
+  setCharge(amount: number): void {
+    const next = Math.max(0, Math.min(1, Number.isFinite(amount) ? amount : 0));
+    this.charge = next;
+  }
+
+  /**
+   * 백스윙 → 다운스윙 → 임팩트 → 팔로우스루 모션.
+   * 임팩트 시각(`impact`)에 클럽 헤드가 공에 닿는 순간이 온다 — 게임은 그 프레임에 공을 내보낸다.
+   */
+  playSwing(style: SwingStyle = 'full'): void {
+    const putt = style === 'putt';
+    this.swing = {
+      t: 0,
+      duration: putt ? PUTT_MOTION_SECONDS : SWING_MOTION_SECONDS,
+      impact: putt ? PUTT_IMPACT_SECONDS : SWING_IMPACT_SECONDS,
+      style,
+      from: this.currentPose(),
+    };
+    // 스윙이 시작되면 차지는 모션에 넘긴다
+    this.charge = 0;
+    this.chargeSmooth = 0;
   }
 
   get isSwinging(): boolean {
-    return this.swingTime >= 0;
+    return this.swing !== null;
   }
 
-  /** 손목/허리 각도 (0~1 진행도) */
-  private swingPose(t: number): { arm: number; torso: number; lean: number } {
-    type Key = { t: number; arm: number; torso: number; lean: number };
-    const keys: Key[] = [
-      { t: 0, arm: -0.3, torso: 0, lean: 0 },
-      { t: 0.42, arm: -1.85, torso: -0.36, lean: -0.06 },
-      { t: 0.62, arm: 0.5, torso: 0.18, lean: 0.04 },
-      { t: 0.78, arm: 1.35, torso: 0.34, lean: 0.08 },
-      { t: 1, arm: -0.3, torso: 0, lean: 0 },
-    ];
-    for (let i = 0; i < keys.length - 1; i += 1) {
-      const a = keys[i];
-      const b = keys[i + 1];
-      if (t <= b.t) {
-        const raw = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-        const k = raw * raw * (3 - 2 * raw);
-        return {
-          arm: a.arm + (b.arm - a.arm) * k,
-          torso: a.torso + (b.torso - a.torso) * k,
-          lean: a.lean + (b.lean - a.lean) * k,
-        };
-      }
+  /** 지금 자세 (스윙 시작점으로 쒜기 위해) */
+  private currentPose(): Pose {
+    return this.swing ? this.swingPose(this.swing) : this.chargePose();
+  }
+
+  /** 검증용: 자세 상태 */
+  debugInfo(): Record<string, number | boolean> {
+    return {
+      charge: this.charge,
+      smooth: this.chargeSmooth,
+      addressing: this.addressing,
+      holdsClub: this.holdsClub,
+      swinging: this.swing !== null,
+      armR: this.armR.rotation.x,
+      wrist: this.clubPivot?.rotation.x ?? 0,
+      torso: this.root.rotation.y,
+    };
+  }
+
+  /** 검증용: 특정 자세를 그대로 보여준다 (null 이면 해제) */
+  debugPose(pose: Partial<Pose> | null): void {
+    this.poseOverride = pose ? { ...ADDRESS_FULL, ...pose } : null;
+  }
+
+  /** 차지 깊이에 따른 백스윙 자세 */
+  private chargePose(): Pose {
+    const keys = this.clubHeads.putter.visible ? 'putt' : 'full';
+    const base = keys === 'putt' ? ADDRESS_PUTT : ADDRESS_FULL;
+    const cocked = keys === 'putt' ? COCKED_PUTT : COCKED_FULL;
+    const breath = Math.sin(this.clock * 1.6) * 0.02;
+    const mixed = mixPose(base, cocked, this.chargeSmooth);
+    return { ...mixed, armR: mixed.armR + breath, armL: mixed.armL + breath };
+  }
+
+  /** 진행 중인 스윙 모션의 자세 */
+  private swingPose(swing: SwingState): Pose {
+    const putt = swing.style === 'putt';
+    const address = putt ? ADDRESS_PUTT : ADDRESS_FULL;
+    const impact = putt ? IMPACT_PUTT : IMPACT_FULL;
+    const follow = putt ? FOLLOW_PUTT : FOLLOW_FULL;
+    const followAt = swing.impact + (swing.duration - swing.impact) * 0.45;
+
+    if (swing.t <= swing.impact) {
+      // 다운스윙: 느리게 시작해 임팩트 직전 가장 빠르다
+      const raw = swing.impact <= 0 ? 1 : swing.t / swing.impact;
+      const accel = raw * raw;
+      return mixPose(swing.from, impact, accel);
     }
-    return { arm: -0.3, torso: 0, lean: 0 };
+    if (swing.t <= followAt) {
+      const k = (swing.t - swing.impact) / Math.max(0.01, followAt - swing.impact);
+      return mixPose(impact, follow, Math.min(1, k * 1.15));
+    }
+    const k = (swing.t - followAt) / Math.max(0.01, swing.duration - followAt);
+    return mixPose(follow, address, k);
+  }
+
+  /** 자세를 팔·몸통·발에 반영 */
+  private applyPose(pose: Pose): void {
+    this.armR.rotation.x = pose.armR;
+    this.armL.rotation.x = pose.armL;
+    if (this.clubPivot) this.clubPivot.rotation.x = pose.wrist;
+    // 백스윙·팔로우스루에서 두 팔을 몸 앞으로 모은다
+    const together = Math.min(1, Math.abs(pose.torso) * 2.2);
+    this.armR.rotation.z = -0.2 + together * 0.12;
+    this.armL.rotation.z = 0.2 - together * 0.12;
+    this.root.rotation.y = pose.torso;
+    this.root.rotation.z = pose.lean;
+    this.root.position.y = pose.dip;
+    const sway = pose.torso * 0.14;
+    this.footL.position.z = 0.02 + sway;
+    this.footR.position.z = 0.02 - sway;
+    this.footL.position.y = 0.075;
+    this.footR.position.y = 0.075;
   }
 
   update(dt: number, moving: boolean): void {
     this.clock += dt;
 
-    // 스윙 모션
-    if (this.swingTime >= 0) {
-      this.swingTime += dt;
-      const t = Math.min(1, this.swingTime / this.swingDuration);
-      const pose = this.swingPose(t);
-      this.armR.rotation.x = pose.arm;
-      this.armL.rotation.x = pose.arm * 0.82;
-      this.root.rotation.y = pose.torso;
-      this.root.rotation.z = pose.lean;
-      this.root.position.y = -pose.lean * 0.12;
-      this.footL.position.z = 0.02 + pose.lean * 0.2;
-      this.footR.position.z = 0.02 - pose.lean * 0.2;
-      this.footL.position.y = 0.075;
-      this.footR.position.y = 0.075;
-      if (t >= 1) {
-        this.swingTime = -1;
+    if (this.poseOverride) {
+      this.applyPose(this.poseOverride);
+      return;
+    }
+
+    // 스윙 모션 (백스윙 → 다운스윙 → 임팩트 → 팔로우스루)
+    if (this.swing) {
+      this.swing.t += dt;
+      if (this.swing.t >= this.swing.duration) {
+        this.swing = null;
+        this.applyPose(this.holdsClub ? ADDRESS_FULL : { ...ADDRESS_FULL, armR: 0, armL: 0 });
         this.root.rotation.y = 0;
         this.root.rotation.z = 0;
         this.root.position.y = 0;
-        this.armR.rotation.x = this.holdsClub ? -0.3 : 0;
+        this.footL.position.z = 0.02;
+        this.footR.position.z = 0.02;
+      } else {
+        this.applyPose(this.swingPose(this.swing));
+        return;
       }
-    } else if (this.addressing && this.holdsClub) {
-      // 어드레스: 채를 살짝 앞으로 겨누고 상체를 숙인다
-      const breathe = Math.sin(this.clock * 1.6) * 0.02;
-      this.armR.rotation.x = -0.46 + breathe;
-      this.armL.rotation.x = -0.32 + breathe;
-      this.root.rotation.y = 0;
+    }
+
+    // 차지(백스윙 감아올리기) — 목표 자세로 부드럽게 따라간다
+    const target = this.addressing && this.holdsClub ? this.charge : 0;
+    this.chargeSmooth += (target - this.chargeSmooth) * (1 - Math.exp(-22 * dt));
+
+    if (this.addressing && this.holdsClub) {
+      this.applyPose(this.chargePose());
     } else {
+      this.chargeSmooth = 0;
       if (moving) this.phase += dt * 9.6;
       const swing = moving ? Math.sin(this.phase) : 0;
       this.root.position.y = moving
         ? Math.abs(Math.sin(this.phase)) * 0.05
         : Math.sin(this.clock * 2.1) * 0.008;
+      this.root.rotation.y = 0;
+      this.root.rotation.z = 0;
       this.armL.rotation.x = swing * 0.5;
+      this.armR.rotation.z = -0.2;
+      this.armL.rotation.z = 0.2;
       if (!this.holdsClub) this.armR.rotation.x = -swing * 0.4;
       else this.armR.rotation.x = -0.3;
       this.footL.position.z = 0.02 + swing * 0.085;

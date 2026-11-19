@@ -1,4 +1,4 @@
-import { GAUGE_IMPACT_SECONDS, GAUGE_POWER_SECONDS } from './constants';
+import { FINE_GAUGE_SLOWDOWN, GAUGE_IMPACT_SECONDS, GAUGE_POWER_SECONDS } from './constants';
 
 /**
  * 홀드 & 릴리즈 스윙 게이지 (2단계).
@@ -80,7 +80,19 @@ export class SwingMeter {
   direction: 1 | -1 = 1;
   /** 이번에 누르고 있던 시간 (초) */
   heldFor = 0;
+  /** 근거리 정밀 게이지 — 남은 거리가 짧아 게이지를 줌인했으면 천천히 차오른다 */
+  fine = false;
   private lastPlan: ShotPlan | null = null;
+
+  /** 0 → 100% 까지 걸리는 시간 (정밀 게이지는 조금 더 느리게) */
+  get powerSeconds(): number {
+    return GAUGE_POWER_SECONDS * (this.fine ? FINE_GAUGE_SLOWDOWN : 1);
+  }
+
+  /** 정밀 게이지 여부 설정 (샷 준비마다 게임이 남은 거리로 정한다) */
+  setFine(fine: boolean): void {
+    this.fine = fine;
+  }
 
   get active(): boolean {
     return this.phase === 'power' || this.phase === 'impact';
@@ -147,7 +159,7 @@ export class SwingMeter {
     if (this.phase === 'power') {
       // 누르고 있는 동안 0% → 100% 로 차오르고, 100%에 닿으면 다시 내려오며 왕복한다
       this.heldFor += dt;
-      this.value += (this.direction * dt) / GAUGE_POWER_SECONDS;
+      this.value += (this.direction * dt) / this.powerSeconds;
       if (this.value >= 1) {
         this.value = 1;
         this.direction = -1;

@@ -156,20 +156,24 @@ const gaugeFill = $('gauge-fill');
 const gaugeMarker = $('gauge-marker');
 const gaugeTarget = $('gauge-target');
 const gaugePower = $('gauge-power');
-const gaugeHint = $('gauge-hint');
-const livePower = $('live-power');
-const liveDist = $('live-dist');
+const gaugeMaxEl = document.querySelector<HTMLElement>('.gauge-max');
 const liveGoal = $('live-goal');
-const rangeTarget = $('range-target');
 const rangeMax = $('range-max');
 const rangeClub = $('range-club');
 const swingButton = $button('btn-swing');
 const swingLabel = $('swing-label');
 const swingSub = $('swing-sub');
 const clubRow = $('clubs');
+const clubPill = $button('btn-club');
+const clubCode = $('club-code');
+const clubName = $('club-name');
+const clubTray = $('club-tray');
+const emojiToggle = $button('btn-emoji');
+const emojiTray = $('emoji-tray');
+const holePill = $button('hole-pill');
+const holeTip = $('hole-tip');
 const shotDist = $('shot-dist');
 const shotLie = $('shot-lie');
-const shotClub = $('shot-club');
 const viewButton = $button('btn-view');
 const viewLabel = $('view-label');
 const aimLeft = $button('btn-aim-left');
@@ -258,22 +262,31 @@ let gaugeLive = false;
 
 const meters = (value: number): string => `${(Math.round(value * 10) / 10).toFixed(1)}m`;
 
-function renderRange(clubId: ClubId, distance: number, clubMax: number): void {
+function renderRange(clubId: ClubId, clubMax: number, fine: boolean): void {
   const club = getClub(clubId);
-  rangeTarget.textContent = meters(distance);
-  rangeMax.textContent = meters(clubMax);
+  rangeMax.textContent = clubMax < 10 ? `${clubMax.toFixed(1)}m` : `${Math.round(clubMax)}m`;
   rangeClub.textContent = club.code;
+  gaugeMaxEl?.classList.toggle('fine', fine);
 }
 
-function renderTargetMarker(needed: number, distance: number, clubMax: number): void {
-  const short = needed > 1.02;
-  const gap = Math.max(1, Math.round(distance - clubMax));
-  gaugeTarget.style.left = `${gaugePercent(short ? 1 : Math.max(0, needed))}%`;
+/** 🎯 목표 % (idle) ↔ 차지 중 현재 파워 % · 예상 비거리 */
+function renderGoal(view: GaugeView): void {
+  const short = view.neededPower > 1.02;
+  const live = view.phase === 'power' || view.phase === 'impact';
+  gaugeTarget.style.left = `${gaugePercent(short ? 1 : Math.max(0, view.neededPower))}%`;
   gaugeTarget.classList.toggle('short', short);
-  liveGoal.classList.toggle('short', short);
-  liveGoal.textContent = short
-    ? `🎯 ${meters(distance)} · ${gap}m 부족`
-    : `🎯 목표 ${Math.round(Math.min(1, Math.max(0, needed)) * 100)}%`;
+  liveGoal.classList.toggle('short', short && !live);
+  liveGoal.classList.toggle('live', live);
+  if (live) {
+    liveGoal.textContent = `${view.powerPercent}% · ${meters(view.estimate)}`;
+    return;
+  }
+  if (short) {
+    const gap = Math.max(1, Math.round(view.distance - view.clubMax));
+    liveGoal.textContent = `🎯 ${gap}m 부족`;
+    return;
+  }
+  liveGoal.textContent = `🎯 ${Math.round(Math.min(1, Math.max(0, view.neededPower)) * 100)}%`;
 }
 
 function renderGauge(view: GaugeView): void {
@@ -291,23 +304,21 @@ function renderGauge(view: GaugeView): void {
   gaugeEl.classList.toggle('live', gaugeLive);
   gaugeEl.classList.toggle('charging', view.phase === 'power');
   gaugeEl.classList.toggle('hit', view.phase === 'impact' && Math.abs(view.value) <= 0.105);
+  gaugeEl.classList.toggle('fine', view.fine);
 
-  gaugeHint.textContent = view.hint;
-
-  // 목표 거리까지 필요한 파워 위치에 핀 마커 + 현재 파워 % · 예상 비거리
-  renderTargetMarker(view.neededPower, view.distance, view.clubMax);
+  renderGoal(view);
   gaugeTarget.classList.toggle('live', gaugeLive);
-  livePower.textContent = `${view.powerPercent}%`;
-  liveDist.textContent = meters(view.estimate);
-  renderRange(view.club, view.distance, view.clubMax);
-  shotClub.textContent = `${getClub(view.club).code} ${getClub(view.club).name}`;
+  renderRange(view.club, view.clubMax, view.fine);
+  const club = getClub(view.club);
+  clubCode.textContent = club.code;
+  clubName.textContent = club.name;
 
   if (view.phase === 'idle' || view.phase === 'done') {
     swingLabel.textContent = '스윙!';
-    swingSub.textContent = '꾹 눌러 파워';
+    swingSub.textContent = '꾹 눌러';
     swingButton.classList.remove('armed', 'impact');
   } else if (view.phase === 'power') {
-    swingLabel.textContent = '놓으면 확정';
+    swingLabel.textContent = '놓으면';
     swingSub.textContent = `${view.powerPercent}%`;
     swingButton.classList.add('armed');
     swingButton.classList.remove('impact');
@@ -322,6 +333,7 @@ function renderGauge(view: GaugeView): void {
   clubRow.querySelectorAll<HTMLButtonElement>('.club-chip').forEach((button) => {
     button.disabled = busy;
   });
+  if (busy) closeClubTray();
 }
 
 function renderClub(clubId: ClubId, recommended: ClubId, distance: number, surface: SurfaceKind): void {
@@ -333,9 +345,12 @@ function renderClub(clubId: ClubId, recommended: ClubId, distance: number, surfa
     button.setAttribute('aria-pressed', String(id === clubId));
   });
   const club = getClub(clubId);
-  shotClub.textContent = `${club.code} ${club.name}`;
+  clubCode.textContent = club.code;
+  clubName.textContent = club.name;
+  clubPill.classList.toggle('recommended', clubId === recommended);
   shotLie.textContent = SURFACE_LABEL[surface];
   shotDist.textContent = `${distance < 10 ? distance.toFixed(1) : Math.round(distance)}m`;
+  $('hole-dist').textContent = distance < 10 ? distance.toFixed(1) : String(Math.round(distance));
 }
 
 // 번호별 클럽 버튼 (1W · 3W · 5I · 7I · 9I · PW · SW · PT)
@@ -366,7 +381,66 @@ clubRow.addEventListener('click', (event) => {
   if (!id) return;
   audio.unlock();
   game.setClub(id);
+  closeClubTray();
 });
+
+// ---------------------------------------------------------------- 클럽 / 이모지 트레이
+
+function openClubTray(): void {
+  closeEmojiTray();
+  clubTray.classList.remove('hidden');
+  clubPill.setAttribute('aria-expanded', 'true');
+  // 지금 든 클럽이 보이도록 트레이를 그쪽으로 살짝 밀어 준다
+  const active = clubRow.querySelector<HTMLButtonElement>('.club-chip.active');
+  active?.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+function closeClubTray(): void {
+  if (clubTray.classList.contains('hidden')) return;
+  clubTray.classList.add('hidden');
+  clubPill.setAttribute('aria-expanded', 'false');
+}
+
+function openEmojiTray(): void {
+  closeClubTray();
+  emojiTray.classList.remove('hidden');
+  emojiToggle.setAttribute('aria-expanded', 'true');
+}
+
+function closeEmojiTray(): void {
+  if (emojiTray.classList.contains('hidden')) return;
+  emojiTray.classList.add('hidden');
+  emojiToggle.setAttribute('aria-expanded', 'false');
+}
+
+clubPill.addEventListener('click', () => {
+  audio.unlock();
+  audio.ui();
+  if (clubTray.classList.contains('hidden')) openClubTray();
+  else closeClubTray();
+});
+
+emojiToggle.addEventListener('click', () => {
+  audio.unlock();
+  audio.ui();
+  if (emojiTray.classList.contains('hidden')) openEmojiTray();
+  else closeEmojiTray();
+});
+
+// 트레이 바깥을 누르면 닫힌다 (스윙·조준 입력은 그대로 동작)
+document.addEventListener(
+  'pointerdown',
+  (event) => {
+    if (mode !== 'game') return;
+    const target = event.target as Node | null;
+    if (target && (clubTray.contains(target) || clubPill.contains(target) || emojiTray.contains(target) || emojiToggle.contains(target))) {
+      return;
+    }
+    closeClubTray();
+    closeEmojiTray();
+  },
+  true,
+);
 
 function holdAim(button: HTMLButtonElement, delta: number): void {
   let interval = 0;
@@ -574,8 +648,6 @@ function enterPlayroom(): void {
   fadeTo(() => {
     hud.classList.remove('hidden');
     lobbyHud.classList.add('hidden');
-    $('me-name').textContent = me.name;
-    ($('me-dot') as HTMLElement).style.background = me.color;
     mode = 'game';
     game.join(me);
     syncLook();
@@ -584,10 +656,12 @@ function enterPlayroom(): void {
       phase: 'idle',
       value: 0,
       power: 0,
-      hint: '스윙! 을 꾹 누르면 파워가 차요',
+      hint: '',
       club: game.currentClub.id,
       distance: game.cupDistance(),
       clubMax: game.clubMax,
+      fullMax: game.gaugeInfo.fullMax,
+      fine: game.gaugeInfo.fine,
       powerPercent: 0,
       estimate: 0,
       neededPower: game.neededPower,
@@ -777,7 +851,15 @@ document.querySelectorAll<HTMLButtonElement>('[data-emoji]').forEach((button) =>
     const emoji = button.dataset.emoji ?? EMOJIS[0];
     audio.unlock();
     game.sendEmoji(emoji);
+    closeEmojiTray();
   });
+});
+
+// 홀 정보 알약 — 탭하면 공략 팁이 펼쳐진다 (기본은 접힘)
+holePill.addEventListener('click', () => {
+  const closed = holeTip.classList.toggle('hidden');
+  holePill.setAttribute('aria-expanded', String(!closed));
+  audio.unlock();
 });
 
 document.querySelectorAll<HTMLButtonElement>('[data-lobby-emoji]').forEach((button) => {
@@ -1001,7 +1083,21 @@ requestAnimationFrame(frame);
 
 // 개발 중 룩 진단용 (배포 빌드에는 남지 않는다)
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__oneone = { renderer, gameScene, lobbyScene, camera };
+  (window as unknown as Record<string, unknown>).__oneone = {
+    renderer,
+    gameScene,
+    lobbyScene,
+    camera,
+    game,
+    lobby,
+    pose: (p: Record<string, number> | null) => game.debugPose(p),
+    golferInfo: () => game.debugGolferInfo(),
+    // 화면 캡처·수동 점검용: 대기실을 거치지 않고 플레이룸으로
+    enterPlayroom: () => {
+      if (mode === 'landing') startLobby();
+      window.setTimeout(() => enterPlayroom(), 60);
+    },
+  };
 }
 
 // HUD의 남은 거리/타수는 프레임과 무관하게 가볍게 갱신
@@ -1013,10 +1109,22 @@ window.setInterval(() => {
   $('hole-dist').textContent = distance < 10 ? distance.toFixed(1) : String(Math.round(distance));
   $('stroke-count').textContent = String(game.currentStrokes);
   shotLie.textContent = SURFACE_LABEL[game.surface];
-  renderRange(game.currentClub.id, distance, game.clubMax);
-  livePower.textContent = '0%';
-  liveDist.textContent = meters(0);
-  renderTargetMarker(game.neededPower, distance, game.clubMax);
+  const info = game.gaugeInfo;
+  renderRange(game.currentClub.id, info.max, info.fine);
+  renderGoal({
+    phase: 'idle',
+    value: 0,
+    power: 0,
+    hint: '',
+    club: game.currentClub.id,
+    distance,
+    clubMax: info.max,
+    fullMax: info.fullMax,
+    fine: info.fine,
+    powerPercent: 0,
+    estimate: 0,
+    neededPower: info.needed,
+  });
 }, 200);
 
 window.addEventListener('beforeunload', () => input.dispose());

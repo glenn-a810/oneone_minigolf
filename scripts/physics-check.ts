@@ -258,6 +258,18 @@ console.log('\n— 샷 후 골퍼는 제자리, 공만 날아간다 —');
   game.debugAimAt(game.debugState().cup[0], game.debugState().cup[1]);
   const before = game.debugGolfer();
   game.debugFire(1, 0, '1W');
+  // 스윙 모션 동안에는 공이 제자리에 있어야 한다 (임팩트 프레임에 출발)
+  let motionFrames = 0;
+  while (game.debugState().state === 'swing' && motionFrames < 60) {
+    game.update(dt);
+    motionFrames += 1;
+  }
+  const stillBall = game.debugBall();
+  check(
+    '스윙 모션 중에는 공이 제자리에 있다 (임팩트 전)',
+    Math.hypot(stillBall.x - before.ballX, stillBall.z - before.ballZ) < 0.01,
+    `이동 ${Math.hypot(stillBall.x - before.ballX, stillBall.z - before.ballZ).toFixed(3)}m · ${(motionFrames / 60).toFixed(2)}초`,
+  );
   const shotSpot = { x: game.debugGolfer().x, z: game.debugGolfer().z };
   let maxDrift = 0;
   let frames = 0;

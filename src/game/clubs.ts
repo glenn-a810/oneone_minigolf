@@ -1,5 +1,6 @@
 import type { SurfaceKind } from './types';
 import { MIN_POWER_RATIO } from './constants';
+import { previewShot } from './ball';
 
 /**
  * 실제 골프처럼 번호별로 나눈 클럽 체계.
@@ -49,9 +50,6 @@ export function getClub(id: ClubId): Club {
   return CLUBS.find((club) => club.id === id) ?? CLUBS[0];
 }
 
-/** 거리 → 비거리 곡선 지수. 실측(파워별 굴림 포함 거리)에 맞춘 보정값. */
-const DISTANCE_EXPONENT = 1.75;
-
 /** 파워 구간이 아닌 값이 들어와도 0~1 로 자른다 */
 function clamp01(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
@@ -60,6 +58,12 @@ function clamp01(value: number): number {
 /** 파워(0~1) → 발사 속도 비율 (0 파워에서도 MIN_POWER_RATIO 만큼은 나간다) */
 export function powerRatio(power: number): number {
   return MIN_POWER_RATIO + (1 - MIN_POWER_RATIO) * clamp01(power);
+}
+
+/** 발사 속도 비율(0~1) → 그 비율에 해당하는 게이지 파워 */
+export function powerFromRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return 0;
+  return (ratio - MIN_POWER_RATIO) / (1 - MIN_POWER_RATIO);
 }
 
 /** 지면별 샷 난이도(러프/벙커에서 파워가 깎인다) */
@@ -76,22 +80,204 @@ export function liePenalty(surface: SurfaceKind): number {
   }
 }
 
-/** 현재 라이에서 이 클럽으로 낼 수 있는 최대 총비거리 (100% 파워) */
-export function clubMaxDistance(club: Club, surface: SurfaceKind): number {
-  return club.total * Math.pow(liePenalty(surface), DISTANCE_EXPONENT);
+// ---------------------------------------------------------------- 실측 거리 곡선
+//
+// 파워 → 비거리를 1.75 승 같은 근사식으로 두면 근거리에서 오차가 커진다.
+// (실제 측정 지수는 클럽·파워마다 1.7~2.0 사이로 달라진다)
+// 그래서 클럽·지면마다 '발사 속도 비율 → 실제 총비거리'를 물리 시뮬레이션으로 몇 점 찍어
+// 곡선으로 들고 있다가 사이 값을 보간한다. 게이지 표기·목표 %·실제 샷이 모두 이 곡선 하나를
+// 쓰므로 세 숫자가 서로 어긋나지 않는다.
+
+const CURVE_SAMPLES = 12;
+/** 퍼터가 굴러가는 지면 (굴림 마찰이 거리 곡선을 바꾼다) */
+function curveGround(club: Club, surface: SurfaceKind): SurfaceKind {
+  if (!club.roll) return 'fairway';
+  if (surface === 'green' || surface === 'fringe' || surface === 'bunker') return surface;
+  return 'green';
 }
 
-/** 파워에 따른 예상 총비거리 (m) */
-export function estimateDistance(club: Club, surface: SurfaceKind, power: number): number {
-  return clubMaxDistance(club, surface) * Math.pow(powerRatio(power), DISTANCE_EXPONENT);
+const GROUND_HEIGHT: Record<SurfaceKind, number> = {
+  tee: 0,
+  fairway: 0,
+  rough: 0,
+  green: 0.01,
+  fringe: 0.005,
+  bunker: 0.005,
+  water: -0.14,
+  out: -0.4,
+};
+
+export interface ClubCurve {
+  club: ClubId;
+  ground: SurfaceKind;
+  /** 표본 발사 속도 비율 (powerRatio 기준, 0.18 ~ 1) */
+  ratios: number[];
+  /** 각 비율에서 실제로 측정한 총비거리 (m) */
+  distances: number[];
+  /** 풀파워 비거리 (m) */
+  full: number;
+}
+
+const curveCache = new Map<string, ClubCurve>();
+
+/** 클럽·지면의 거리 곡선 (처음 한 번만 시뮬레이션하고 캐시) */
+export function clubCurve(club: Club, surface: SurfaceKind): ClubCurve {
+  const ground = curveGround(club, surface);
+  const key = `${club.id}:${ground}`;
+  const cached = curveCache.get(key);
+  if (cached) return cached;
+
+  const ratios: number[] = [];
+  const distances: number[] = [];
+  const height = GROUND_HEIGHT[ground];
+  const ctx = {
+    surfaceAt: () => ({ kind: ground, height }),
+    obstacles: [],
+  };
+  for (let i = 0; i < CURVE_SAMPLES; i += 1) {
+    const ratio = MIN_POWER_RATIO + ((1 - MIN_POWER_RATIO) * i) / (CURVE_SAMPLES - 1);
+    const speed = Math.max(0.25, club.speed * ratio);
+    const start = { x: 0, y: height + 0.115, z: 0, surface: ground };
+    const shot = club.roll
+      ? previewShot({ speed, loft: 0, yaw: 0, curve: 0 }, ctx, start, {
+          rolling: true,
+          speed,
+          maxSeconds: 24,
+        })
+      : previewShot({ speed, loft: club.loft, yaw: 0, curve: 0 }, ctx, start, { maxSeconds: 12 });
+    const rest = shot.rest;
+    const distance = rest ? Math.hypot(rest.x, rest.z) : 0;
+    ratios.push(ratio);
+    distances.push(distance);
+  }
+  // 단조 증가 보정 (같은 거리로 측정된 구간이 있으면 뒤 값을 살짝 올려 역보간이 안정되게)
+  for (let i = 1; i < distances.length; i += 1) {
+    if (distances[i] <= distances[i - 1]) distances[i] = distances[i - 1] + 0.01;
+  }
+
+  const curve: ClubCurve = {
+    club: club.id,
+    ground,
+    ratios,
+    distances,
+    full: distances[distances.length - 1],
+  };
+  curveCache.set(key, curve);
+  return curve;
+}
+
+/** 발사 속도 비율(클럽 풀스피드 대비) → 실제 총비거리 (m) */
+export function distanceForRatio(curve: ClubCurve, ratio: number): number {
+  const rs = curve.ratios;
+  const ds = curve.distances;
+  if (!(ratio > 0)) return 0;
+  if (ratio <= rs[0]) {
+    // 최소 파워 구간 아래는 원점으로 선형 외삽
+    return (ds[0] * ratio) / rs[0];
+  }
+  if (ratio >= rs[rs.length - 1]) {
+    const last = rs.length - 1;
+    const slope = (ds[last] - ds[last - 1]) / (rs[last] - rs[last - 1]);
+    return ds[last] + (ratio - rs[last]) * slope;
+  }
+  for (let i = 1; i < rs.length; i += 1) {
+    if (ratio <= rs[i]) {
+      const k = (ratio - rs[i - 1]) / (rs[i] - rs[i - 1]);
+      return ds[i - 1] + (ds[i] - ds[i - 1]) * k;
+    }
+  }
+  return ds[ds.length - 1];
+}
+
+/** 거리(m) → 그 거리에 닿는 발사 속도 비율 (0~1 밖으로도 나올 수 있다) */
+export function ratioForDistance(curve: ClubCurve, distance: number): number {
+  const rs = curve.ratios;
+  const ds = curve.distances;
+  const d = Math.max(0, Number.isFinite(distance) ? distance : 0);
+  if (d <= 0) return 0;
+  if (d <= ds[0]) return (rs[0] * d) / Math.max(1e-4, ds[0]);
+  if (d >= ds[ds.length - 1]) {
+    const last = rs.length - 1;
+    const slope = (ds[last] - ds[last - 1]) / (rs[last] - rs[last - 1]);
+    return rs[last] + (d - ds[last]) / Math.max(1e-4, slope);
+  }
+  for (let i = 1; i < ds.length; i += 1) {
+    if (d <= ds[i]) {
+      const k = (d - ds[i - 1]) / Math.max(1e-4, ds[i] - ds[i - 1]);
+      return rs[i - 1] + (rs[i] - rs[i - 1]) * k;
+    }
+  }
+  return rs[rs.length - 1];
+}
+
+/** 현재 라이에서 이 클럽으로 낼 수 있는 최대 총비거리 (100% 파워) */
+export function clubMaxDistance(club: Club, surface: SurfaceKind): number {
+  return distanceForRatio(clubCurve(club, surface), liePenalty(surface));
+}
+
+/** 파워에 따른 예상 총비거리 (m). scale 은 게이지 줌 배율(발사 속도 배율)이다. */
+export function estimateDistance(club: Club, surface: SurfaceKind, power: number, scale = 1): number {
+  const ratio = powerRatio(power) * liePenalty(surface) * Math.max(0, scale);
+  return distanceForRatio(clubCurve(club, surface), ratio);
 }
 
 /** 목표 거리에 필요한 파워 (0~1). 이 클럽으로 닿지 않으면 1 보다 커진다. */
 export function powerForDistance(club: Club, surface: SurfaceKind, distance: number): number {
-  const max = clubMaxDistance(club, surface);
-  if (max <= 0.05) return 1;
-  const ratio = Math.pow(Math.max(0, distance) / max, 1 / DISTANCE_EXPONENT);
-  return (ratio - MIN_POWER_RATIO) / (1 - MIN_POWER_RATIO);
+  const ratio = ratioForDistance(clubCurve(club, surface), distance);
+  return powerFromRatio(ratio / liePenalty(surface));
+}
+
+/** 실제로 공을 내보낼 때 쓰는 발사 속도 (m/s). 게이지 예상 거리와 같은 곡선을 쓴다. */
+export function launchSpeed(club: Club, surface: SurfaceKind, power: number, scale = 1): number {
+  return club.speed * powerRatio(power) * liePenalty(surface) * Math.max(0, Math.min(2, scale));
+}
+
+// ---------------------------------------------------------------- 가변 게이지 (근거리 줌)
+//
+// 남은 거리가 클럽 최대 비거이에 비해 짧으면 목표 파워가 0% 근처에 붙어 조작이 불가능하다.
+// 그래서 게이지 100%가 뜻하는 유효 최대 거리(effectiveMax)를 남은 거리에 맞춰 줄이고,
+// 목표 파워가 항상 게이지의 50~64% 구간에 놓이게 한다. (먼 거리는 클럽 원래 값 그대로)
+
+/** 가변 스케일에서 목표 파워의 하한 */
+export const GAUGE_TARGET_MIN = 0.5;
+/** 가변 스케일에서 목표 파워의 상한 */
+export const GAUGE_TARGET_MAX = 0.64;
+/** 목표 파워를 이만큼 여유 있게 잡아 게이지 가운데로 끌어올린다 */
+export const GAUGE_TARGET_PAD = 0.13;
+/** 이보다 좁게 줄이지는 않는다 (너무 짧으면 아주 살짝만 스쳐도 크게 튄다) */
+export const GAUGE_SCALE_MIN = 0.045;
+
+export interface GaugeScale {
+  /** 게이지 100% 가 나타내는 유효 최대 비거리 (m) */
+  max: number;
+  /** 실제 발사 속도에 곱하는 배율 (0~1) */
+  scale: number;
+  /** 이 스케일에서 목표 거리에 필요한 파워 (0~1, 1 초과 = 이 클럽으로 부족) */
+  needed: number;
+  /** 근거리 정밀 스케일이 걸렸는지 */
+  fine: boolean;
+  /** 클럽 원래 최대 거리 (m, 현재 라이) */
+  fullMax: number;
+  /** 남은 거리 (m) */
+  distance: number;
+}
+
+/** 남은 거리·클럽·라이에 맞춘 게이지 스케일 */
+export function gaugeScale(club: Club, surface: SurfaceKind, distance: number): GaugeScale {
+  const curve = clubCurve(club, surface);
+  const lie = liePenalty(surface);
+  const fullMax = distanceForRatio(curve, lie);
+  const needRatio = ratioForDistance(curve, distance);
+  const needPower = powerFromRatio(needRatio / lie);
+
+  if (!(distance > 0.02) || needPower >= GAUGE_TARGET_MAX) {
+    return { max: fullMax, scale: 1, needed: needPower, fine: false, fullMax, distance };
+  }
+
+  const target = Math.min(GAUGE_TARGET_MAX, Math.max(GAUGE_TARGET_MIN, needPower + GAUGE_TARGET_PAD));
+  const scale = Math.max(GAUGE_SCALE_MIN, Math.min(1, needRatio / (lie * powerRatio(target))));
+  const max = distanceForRatio(curve, lie * scale);
+  return { max, scale, needed: target, fine: scale < 0.995, fullMax, distance };
 }
 
 /** 짧은 클럽부터 긴 클럽 순서 (추천 탐색용) */
@@ -109,7 +295,7 @@ export function recommendClub(distance: number, surface: SurfaceKind): ClubId {
   if (surface === 'bunker') return 'SW';
   // 라이 페널티를 감안해 '페어웨이 기준'으로 필요한 비거리를 구한 뒤,
   // 풀스윙에 5% 여유를 두고 닿는 가장 짧은 클럽을 고른다 (남는 파워는 타이밍용)
-  const need = (distance / Math.pow(liePenalty(surface), DISTANCE_EXPONENT)) * 1.05;
+  const need = (distance / Math.pow(liePenalty(surface), 1.75)) * 1.05;
   for (const id of ASCENDING) {
     if (getClub(id).total >= need) return id;
   }

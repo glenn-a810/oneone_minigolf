@@ -24,6 +24,16 @@ export const STROKE_LIMIT_EXTRA = 5;
 export const GAUGE_POWER_SECONDS = 1.25;
 /** 임팩트 존까지 되돌아오는 시간(초) */
 export const GAUGE_IMPACT_SECONDS = 1.0;
+/** 근거리 정밀 게이지에서 파워가 차오르는 시간 배율 (천천히 차올라 정확히 맞추기 쉽게) */
+export const FINE_GAUGE_SLOWDOWN = 1.3;
+
+/** 일반 클럽 스윙: 백스윙 → 임팩트까지 걸리는 시간(초) — 이 순간 공이 출발한다 */
+export const SWING_IMPACT_SECONDS = 0.15;
+/** 퍼팅 스트로크: 백스트로크 → 임팩트까지 걸리는 시간(초) */
+export const PUTT_IMPACT_SECONDS = 0.13;
+/** 스윙 모션 전체 길이(초) — 팔로우스루까지 */
+export const SWING_MOTION_SECONDS = 0.95;
+export const PUTT_MOTION_SECONDS = 0.68;
 
 export const BALL_COLORS = [
   { name: '코랄', hex: '#ff7a59' },

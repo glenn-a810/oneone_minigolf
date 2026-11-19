@@ -7,17 +7,22 @@ import { Effects } from './effects';
 import type { AudioEngine } from './audio';
 import { createBall } from './scenery';
 import { Golfer, type ClubLook } from '../lobby/avatar';
-import { BALL_RADIUS, MIN_POWER_RATIO, STROKE_LIMIT_EXTRA } from './constants';
+import {
+  BALL_RADIUS,
+  PUTT_IMPACT_SECONDS,
+  STROKE_LIMIT_EXTRA,
+  SWING_IMPACT_SECONDS,
+} from './constants';
 import { GolfBall, previewShot, type TrajectoryPreview } from './ball';
 import {
-  clubMaxDistance,
   estimateDistance,
+  gaugeScale,
   getClub,
-  liePenalty,
-  powerForDistance,
+  launchSpeed,
   recommendClub,
   type Club,
   type ClubId,
+  type GaugeScale,
 } from './clubs';
 import { SwingMeter, type ShotPlan } from './swing';
 import type { NetMessage, Realtime } from '../net/realtime';
@@ -65,8 +70,12 @@ export interface GaugeView {
   club: ClubId;
   /** 남은 거리 (컵까지, m) */
   distance: number;
-  /** 선택 클럽의 최대 비거리 (100% 파워, 현재 라이) */
+  /** 게이지 100% 가 나타내는 유효 최대 비거리 (m, 근거리에서는 클럽 최대보다 짧다) */
   clubMax: number;
+  /** 클럽 원래 최대 비거리 (100% 파워, 현재 라이) */
+  fullMax: number;
+  /** 근거리 정밀 게이지(줌인)가 걸렸는지 */
+  fine: boolean;
   /** 현재 게이지 파워 % (0~100) */
   powerPercent: number;
   /** 현재 파워의 예상 비거리 (m) */
@@ -83,7 +92,7 @@ export interface GameOptions {
   events?: GameEvents;
 }
 
-type GameState = 'idle' | 'ready' | 'gauge' | 'flight' | 'sinking' | 'between' | 'finished';
+type GameState = 'idle' | 'ready' | 'gauge' | 'swing' | 'flight' | 'sinking' | 'between' | 'finished';
 
 interface PointerState {
   x: number;
@@ -166,10 +175,21 @@ export class Game {
   private readonly lastShotPos = new THREE.Vector3();
   private sinkTimer = 0;
   private betweenTimer = 0;
+  /** 스윙 모션이 시작된 뒤 흐른 시간 (임팩트 프레임에 공이 출발한다) */
+  private swingTimer = 0;
+  /** 임팩트 순간에 내보낼 샷 (모션 중에는 공이 제자리에 있다) */
+  private pendingShot: {
+    plan: ShotPlan;
+    club: Club;
+    surface: SurfaceKind;
+    scale: number;
+    yaw: number;
+  } | null = null;
   private netTimer = 0;
   private peersDirty = false;
   private peerEmitTimer = 0;
   private previewTimer = 0;
+  private recommendTimer = 0;
   private preview: TrajectoryPreview | null = null;
   private lastSurface: SurfaceKind = 'fairway';
   private readonly peers = new Map<string, PlayerSnapshot>();
@@ -465,6 +485,7 @@ export class Game {
     this.course?.update(step);
 
     if (this.state === 'flight') this.updateFlight(step);
+    else if (this.state === 'swing') this.updateSwingMotion(step);
     else if (this.state === 'sinking') this.updateSinking(step);
     else if (this.state === 'between') {
       this.betweenTimer -= step;
@@ -492,6 +513,24 @@ export class Game {
       if (this.previewTimer >= PREVIEW_INTERVAL) {
         this.previewTimer = 0;
         this.refreshPreview(false);
+      }
+    }
+
+    // 샷 준비 중에는 남은 거리가 바뀌지 않아도 추천 클럽이 어긋나 있으면 바로잡는다
+    // (근거리에 드라이버가 남아 있는 등 클럽과 거리가 맞지 않는 상태 방지)
+    if (this.state === 'ready') {
+      this.recommendTimer += step;
+      if (this.recommendTimer >= 0.3) {
+        this.recommendTimer = 0;
+        const distance = this.cupDistanceFrom(this.ball.x, this.ball.z);
+        const pick = recommendClub(distance, this.surfaceAt(this.ball.x, this.ball.z));
+        if (!this.clubManual && (pick !== this.recommended || this.clubId !== pick)) {
+          this.refreshRecommended(this.ball.x, this.ball.z);
+          this.emitGauge();
+        } else if (pick !== this.recommended) {
+          this.recommended = pick;
+          this.emitClub();
+        }
       }
     }
 
@@ -554,9 +593,13 @@ export class Game {
       this.rig.update(dt, this.focusPoint(), this.camera, false, 3);
       return;
     }
-    this.rig.setDistance(this.state === 'finished' ? 13 : 10.5);
-    this.rig.setPitch(0.42);
-    this.rig.update(dt, this.focusPoint(), this.camera, false, 1.5);
+    // 세로 화면: 하단 HUD 가 가리는 영역을 피해 공·골퍼·깃발이 화면 위쪽에 모이도록
+    // 시선을 공 뒤쪽으로 조금 당기고 카메라를 살짝 높인다
+    const portrait = this.camera.aspect < 0.95;
+    const dist = this.state === 'finished' ? 13 : 10.5;
+    this.rig.setDistance(portrait ? dist * 0.88 : dist);
+    this.rig.setPitch(portrait ? 0.4 : 0.42);
+    this.rig.update(dt, this.focusPoint(), this.camera, false, portrait ? 0.55 : 1.5);
   }
 
   /** 티(공) ↔ 그린 중앙 거리 */
@@ -623,6 +666,7 @@ export class Game {
       golfer.group.position.copy(this.golferPos);
       face(this.golferFacing);
       golfer.setAddressing(false);
+      golfer.setCharge(0);
       golfer.update(dt, false);
       return;
     }
@@ -646,7 +690,18 @@ export class Game {
     golfer.group.position.copy(this.golferPos);
     face(this.aimYaw);
     golfer.setAddressing(!walking);
+    // 차지 중에는 파워만큼 백스윙으로 감아올린다 (손을 떼도 임팩트 탭까지 자세를 유지)
+    golfer.setCharge(this.chargePose());
     golfer.update(dt, walking);
+  }
+
+  /** 골퍼가 지금 보여줘야 하는 백스윙 깊이 (0~1) */
+  private chargePose(): number {
+    if (this.state !== 'gauge') return 0;
+    const meter = this.meter;
+    if (meter.phase === 'power') return Math.min(1, Math.max(0, meter.value));
+    if (meter.phase === 'impact') return Math.min(1, Math.max(0, meter.power));
+    return 0;
   }
 
   private updateFlight(dt: number): void {
@@ -925,22 +980,29 @@ export class Game {
     return getClub(this.clubId);
   }
 
-  get clubMax(): number {
-    return clubMaxDistance(getClub(this.clubId), this.surfaceAt(this.ball.x, this.ball.z));
-  }
-
-  /** 목표(컴)까지 남은 거리로 필요한 파워 (1 초과 = 이 클럽으로 부족) */
-  get neededPower(): number {
-    return powerForDistance(
+  /** 남은 거리·클럽·라이에 맞춘 게이지 스케일 (근거리 줌 포함) */
+  get gaugeInfo(): GaugeScale {
+    return gaugeScale(
       getClub(this.clubId),
       this.surfaceAt(this.ball.x, this.ball.z),
       this.cupDistanceFrom(this.ball.x, this.ball.z),
     );
   }
 
+  /** 게이지 100% 가 나타내는 유효 최대 비거리 (m) */
+  get clubMax(): number {
+    return this.gaugeInfo.max;
+  }
+
+  /** 목표(컴)까지 남은 거리로 필요한 파워 (1 초과 = 이 클럽으로 부족) */
+  get neededPower(): number {
+    return this.gaugeInfo.needed;
+  }
+
   /** 현재 파워에서의 예상 비거리 (m) */
   estimateFor(power: number): number {
-    return estimateDistance(getClub(this.clubId), this.surfaceAt(this.ball.x, this.ball.z), power);
+    const info = this.gaugeInfo;
+    return estimateDistance(getClub(this.clubId), this.surfaceAt(this.ball.x, this.ball.z), power, info.scale);
   }
 
   get club(): Club {
@@ -954,6 +1016,8 @@ export class Game {
    */
   swingPress(): void {
     if (this.state === 'ready') {
+      // 남은 거리가 짧으면 게이지가 천천히 차오르는 정밀 모드로
+      this.meter.setFine(this.gaugeInfo.fine);
       if (this.meter.beginHold()) {
         this.state = 'gauge';
         this.audio.ui();
@@ -1023,32 +1087,55 @@ export class Game {
   private fireShot(plan: ShotPlan): void {
     const club = getClub(this.clubId);
     const surface = this.surfaceAt(this.ball.x, this.ball.z);
+    const scale = gaugeScale(club, surface, this.cupDistanceFrom(this.ball.x, this.ball.z)).scale;
     this.lastSurface = surface;
 
-    const speed =
-      club.speed * (MIN_POWER_RATIO + (1 - MIN_POWER_RATIO) * plan.power) * liePenalty(surface);
-    const yaw = this.aimYaw + plan.yawOffset;
+    // 공은 아직 그대로 두고, 골퍼 스윙 모션을 먼저 시작한다.
+    // 임팩트 프레임(0.13~0.15초 뒤)에 클럽 헤드가 공에 닿는 순간 공이 출발한다.
+    this.pendingShot = { plan, club, surface, scale, yaw: this.aimYaw + plan.yawOffset };
+    this.strokes += 1;
+    this.state = 'swing';
+    this.swingTimer = 0;
+    this.meter.reset();
+    this.hideAimGuide();
+    this.golfer?.playSwing(club.roll ? 'putt' : 'full');
 
+    this.rig.setDistance(club.roll ? 11 : 14);
+    this.events.onStroke?.(this.strokes);
+    this.events.onGauge?.(this.gaugeView());
+    this.broadcastState(true);
+  }
+
+  /** 스윙 모션 진행 — 임팩트 프레임에 맞춰 공을 내보낸다 */
+  private updateSwingMotion(dt: number): void {
+    this.swingTimer += dt;
+    const shot = this.pendingShot;
+    if (!shot) return;
+    const impactAt = shot.club.roll ? PUTT_IMPACT_SECONDS : SWING_IMPACT_SECONDS;
+    if (this.swingTimer >= impactAt) this.launchPendingShot();
+  }
+
+  /** 클럽 헤드가 공에 닿는 순간 — 실제 발사·이펙트·사운드가 한 프레임에 모인다 */
+  private launchPendingShot(): void {
+    const shot = this.pendingShot;
+    if (!shot) return;
+    this.pendingShot = null;
+    const { club, surface, scale, plan, yaw } = shot;
+
+    const speed = launchSpeed(club, surface, plan.power, scale);
     this.lastShotPos.set(this.ball.x, 0, this.ball.z);
     if (club.roll) {
-      this.ball.launchRoll(Math.max(0.8, speed), yaw, surface);
+      this.ball.launchRoll(Math.max(0.22, speed), yaw, surface);
     } else {
       this.ball.launch({ speed, loft: club.loft, yaw, curve: plan.curve }, surface);
     }
-
-    this.strokes += 1;
     this.state = 'flight';
-    this.meter.reset();
-    this.hideAimGuide();
 
     const impact = new THREE.Vector3(this.ball.x, this.ball.y, this.ball.z);
     this.effects.spark(impact, plan.grade);
     this.audio.shot(club.id, plan.power);
-    this.golfer?.playSwing(club.roll ? 0.6 : 0.92);
 
-    this.rig.setDistance(14);
     this.events.onShot?.(plan, club);
-    this.events.onStroke?.(this.strokes);
     this.events.onGauge?.(this.gaugeView());
     this.broadcastState(true);
 
@@ -1079,8 +1166,8 @@ export class Game {
           ? Math.max(0.12, Math.min(1, this.meter.value))
           : Math.max(0.12, Math.min(1, this.meter.power));
     }
-    const speed =
-      club.speed * (MIN_POWER_RATIO + (1 - MIN_POWER_RATIO) * power) * liePenalty(this.lastSurface);
+    const scale = gaugeScale(club, this.lastSurface, this.cupDistanceFrom(this.ball.x, this.ball.z)).scale;
+    const speed = launchSpeed(club, this.lastSurface, power, scale);
     return { speed, loft: club.loft, power, roll: club.roll };
   }
 
@@ -1106,10 +1193,10 @@ export class Game {
 
     const preview = launch.roll
       ? previewShot(
-          { speed: Math.max(1, launch.speed), loft: 0, yaw: this.aimYaw, curve: 0 },
+          { speed: Math.max(0.22, launch.speed), loft: 0, yaw: this.aimYaw, curve: 0 },
           ctx,
           start,
-          { rolling: true, speed: Math.max(1, launch.speed), maxSeconds: 6 },
+          { rolling: true, speed: Math.max(0.22, launch.speed), maxSeconds: 12 },
         )
       : previewShot(
           { speed: launch.speed, loft: launch.loft, yaw: this.aimYaw, curve: 0 },
@@ -1200,6 +1287,7 @@ export class Game {
 
   private gaugeView(): GaugeView {
     const distance = this.cupDistanceFrom(this.ball.x, this.ball.z);
+    const info = this.gaugeInfo;
     const power = this.state === 'gauge' ? this.meter.power : 0;
     const live = this.state === 'gauge' && this.meter.phase === 'power' ? this.meter.value : power;
     return {
@@ -1209,10 +1297,12 @@ export class Game {
       hint: this.meter.hint,
       club: this.clubId,
       distance,
-      clubMax: this.clubMax,
+      clubMax: info.max,
+      fullMax: info.fullMax,
+      fine: info.fine,
       powerPercent: Math.round(Math.max(0, Math.min(1, live)) * 100),
       estimate: this.estimateFor(live),
-      neededPower: this.neededPower,
+      neededPower: info.needed,
     };
   }
 
@@ -1275,6 +1365,35 @@ export class Game {
     };
   }
 
+  /** 검증용: 골퍼 자세를 직접 지정 (스윙 자세 눈으로 확인) */
+  debugPose(pose: Record<string, number> | null): void {
+    this.golfer?.debugPose(pose as never);
+  }
+
+  /** 검증용: 골퍼 자세 상태 */
+  debugGolferInfo(): Record<string, number | boolean> {
+    return this.golfer?.debugInfo() ?? {};
+  }
+
+  /** 검증용: 골퍼가 지금 스윙 모션 중인지 */
+  debugClubSwing(): boolean {
+    return this.golfer?.isSwinging ?? false;
+  }
+
+  /** 검증용: 공을 원하는 자리에 놓고 샷 준비 상태로 만든다 (근거리 게이지 확인) */
+  debugMoveBall(x: number, z: number): void {
+    if (this.state === 'flight' || this.state === 'swing' || this.state === 'sinking') return;
+    this.placeBall(x, z);
+    this.state = 'ready';
+    this.meter.reset();
+    this.aimYaw = this.yawTo(this.ball.x, this.ball.z, this.course?.cup.x ?? 0, this.course?.cup.z ?? 0);
+    this.refreshRecommended(this.ball.x, this.ball.z, true);
+    this.snapGolfer();
+    this.emitGauge();
+    this.emitClub();
+    this.refreshPreview(true);
+  }
+
   /** 검증용: 골퍼·공 위치 (샷 후 골퍼가 제자리에 있는지 확인) */
   debugGolfer(): { x: number; z: number; ballX: number; ballZ: number; facing: number } {
     return {
@@ -1320,8 +1439,8 @@ export class Game {
     if (!this.course) return null;
     const club = getClub(this.clubId);
     const clamped = Math.max(0.05, Math.min(1, power));
-    const speed =
-      club.speed * (MIN_POWER_RATIO + (1 - MIN_POWER_RATIO) * clamped) * liePenalty(this.lastSurface);
+    const info = this.gaugeInfo;
+    const speed = launchSpeed(club, this.lastSurface, clamped, info.scale);
     const ctx = {
       surfaceAt: this.course.surfaceAt,
       obstacles: this.course.obstacles,
@@ -1329,7 +1448,7 @@ export class Game {
     };
     const start = { x: this.ball.x, y: this.ball.y, z: this.ball.z, surface: this.lastSurface };
     if (club.roll) {
-      const rollSpeed = Math.max(0.8, speed);
+      const rollSpeed = Math.max(0.22, speed);
       return previewShot({ speed: rollSpeed, loft: 0, yaw: this.aimYaw, curve: 0 }, ctx, start, {
         rolling: true,
         speed: rollSpeed,
