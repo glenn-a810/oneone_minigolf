@@ -43,17 +43,17 @@ interface SurfaceDef {
 }
 
 export const SURFACES: Record<SurfaceKind, SurfaceDef> = {
-  turf: { tile: 5.5, size: 512, normalStrength: 1.15, roughness: 0.94, metalness: 0, envIntensity: 0.5 },
-  fairway: { tile: 4.2, size: 512, normalStrength: 0.9, roughness: 0.9, metalness: 0, envIntensity: 0.55 },
-  green: { tile: 3.4, size: 256, normalStrength: 0.55, roughness: 0.78, metalness: 0, envIntensity: 0.6 },
+  turf: { tile: 5.5, size: 512, normalStrength: 0.62, roughness: 0.95, metalness: 0, envIntensity: 0.45 },
+  fairway: { tile: 4.2, size: 512, normalStrength: 0.5, roughness: 0.92, metalness: 0, envIntensity: 0.5 },
+  green: { tile: 3.0, size: 256, normalStrength: 0.38, roughness: 0.8, metalness: 0, envIntensity: 0.55 },
   sand: { tile: 2.6, size: 512, normalStrength: 1.3, roughness: 0.97, metalness: 0, envIntensity: 0.35 },
   soil: { tile: 3.0, size: 256, normalStrength: 1.2, roughness: 0.98, metalness: 0, envIntensity: 0.3 },
   rock: { tile: 2.6, size: 512, normalStrength: 1.5, roughness: 0.86, metalness: 0, envIntensity: 0.5 },
   stone: { tile: 2.2, size: 256, normalStrength: 0.7, roughness: 0.76, metalness: 0, envIntensity: 0.6 },
-  wood: { tile: 1.5, size: 256, normalStrength: 0.6, roughness: 0.55, metalness: 0, envIntensity: 0.65 },
+  wood: { tile: 1.2, size: 256, normalStrength: 0.28, roughness: 0.58, metalness: 0, envIntensity: 0.6 },
   bark: { tile: 1.0, size: 256, normalStrength: 1.35, roughness: 0.94, metalness: 0, envIntensity: 0.45 },
   leaf: { tile: 1.1, size: 256, normalStrength: 1.0, roughness: 0.72, metalness: 0, envIntensity: 0.55 },
-  water: { tile: 6.0, size: 512, normalStrength: 1.5, roughness: 0.05, metalness: 0.02, envIntensity: 1.8 },
+  water: { tile: 3.5, size: 512, normalStrength: 1.0, roughness: 0.07, metalness: 0.02, envIntensity: 1.25 },
   metal: { tile: 0.8, size: 256, normalStrength: 0.35, roughness: 0.3, metalness: 1, envIntensity: 1.5 },
   fabric: { tile: 0.6, size: 256, normalStrength: 0.5, roughness: 0.9, metalness: 0, envIntensity: 0.45 },
   skin: { tile: 0.45, size: 256, normalStrength: 0.25, roughness: 0.55, metalness: 0, envIntensity: 0.55 },
@@ -158,12 +158,13 @@ function grassSample(
   stripe: number,
 ): SurfaceSample {
   const clump = tfbm(u, v, 4, 4, seed, 3);
-  const mid = tfbm(u, v, 12, 12, seed + 11, 2);
-  const blade = tnoise(u, v, freq, Math.max(4, Math.round(freq * 0.18)), seed + 23);
-  const tips = tnoise(u, v, Math.round(freq * 1.7), Math.round(freq * 1.7), seed + 31);
-  const shade = clamp01(blade * 0.46 + mid * 0.26 + clump * 0.2 + tips * 0.08);
+  const mid = tfbm(u, v, 11, 11, seed + 11, 3);
+  // 잔디 결은 살짝만 세로로 길게 (지나치게 줄무늬처럼 보이지 않도록)
+  const blade = tnoise(u, v, freq, Math.max(8, Math.round(freq * 0.62)), seed + 23);
+  const tips = tnoise(u, v, Math.round(freq * 1.6), Math.round(freq * 1.6), seed + 31);
+  const shade = clamp01(blade * 0.3 + mid * 0.34 + clump * 0.3 + tips * 0.06);
   const dryness = smoothstep(0.56, 0.88, clump) * dryAmount;
-  const tone = 0.82 + shade * 0.28 - (1 - tips) * 0.06;
+  const tone = 0.84 + shade * 0.22 - (1 - tips) * 0.05;
   let color = mixRgb(palette.dark, palette.light, shade);
   color = mixRgb(color, palette.dry, dryness * 0.45);
   // 잔디 깎은 줄무늬 (아주 옅게 — 정점 색의 스트라이프를 거들어 준다)
@@ -244,17 +245,17 @@ function sampleSurface(kind: SurfaceKind, u: number, v: number): SurfaceSample {
       };
     }
     case 'wood': {
-      const warp = tfbm(u, v, 3, 3, 8801, 3);
-      const grain = 0.5 + 0.5 * Math.sin((v * 16 + warp * 6) * Math.PI * 2);
-      const fine = tnoise(u, v, 44, 180, 8807);
-      const knot = smoothstep(0.76, 0.96, tfbm(u, v, 6, 6, 8813, 3));
-      const tone = 0.7 + grain * 0.26 + (fine - 0.5) * 0.12 - knot * 0.2;
+      const warp = tfbm(u, v, 4, 4, 8801, 3);
+      const grain = 0.5 + 0.5 * Math.sin((v * 34 + warp * 1.5) * Math.PI * 2);
+      const fine = tnoise(u, v, 60, 220, 8807);
+      const knot = smoothstep(0.8, 0.97, tfbm(u, v, 6, 6, 8813, 3));
+      const tone = 0.82 + grain * 0.13 + (fine - 0.5) * 0.1 - knot * 0.14;
       return {
         r: clamp01(1.0 * tone),
-        g: clamp01(0.92 * tone),
-        b: clamp01(0.82 * tone),
-        h: grain * 0.55 + fine * 0.3,
-        rough: 0.44 + (1 - grain) * 0.22 + knot * 0.1,
+        g: clamp01(0.93 * tone),
+        b: clamp01(0.84 * tone),
+        h: grain * 0.4 + fine * 0.35,
+        rough: 0.5 + (1 - grain) * 0.16 + knot * 0.1,
       };
     }
     case 'bark': {
@@ -526,17 +527,17 @@ export function createWaterMaterial(options: { color?: THREE.ColorRepresentation
   const def = SURFACES.water;
   const set = surfaceTextures('water');
   const material = new THREE.MeshPhysicalMaterial({
-    color: options.color ?? 0x2a6f80,
+    color: options.color ?? 0x1e5566,
     roughness: def.roughness,
     metalness: def.metalness,
     transparent: true,
-    opacity: options.opacity ?? 0.94,
+    opacity: options.opacity ?? 0.92,
     normalMap: set.normalMap,
-    normalScale: new THREE.Vector2(0.6, 0.6),
+    normalScale: new THREE.Vector2(0.45, 0.45),
     roughnessMap: null,
     envMapIntensity: def.envIntensity,
-    clearcoat: 1,
-    clearcoatRoughness: 0.06,
+    clearcoat: 0.55,
+    clearcoatRoughness: 0.14,
   });
   material.name = 'real-water';
   material.userData.oneoneReal = true;
@@ -627,7 +628,7 @@ export function buildEnvironmentScene(): THREE.Scene {
   scene.add(ground);
 
   // 태양 (HDR 값을 넘겨 금속·물에 강한 하이라이트가 맺히게)
-  const sunMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 8.2, 6.4) });
+  const sunMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(4.2, 3.8, 3.0) });
   const sun = new THREE.Mesh(new THREE.SphereGeometry(5.5, 16, 12), sunMaterial);
   sun.position.set(0.42, 0.62, 0.46).normalize().multiplyScalar(95);
   scene.add(sun);
